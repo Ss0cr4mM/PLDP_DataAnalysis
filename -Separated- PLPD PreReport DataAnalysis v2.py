@@ -191,33 +191,26 @@ def fit_single_run(time, temp):
     except RuntimeError:
         return None
 
-def goodness_of_fit(time, temp, popt):
+def goodness_of_fit(time, temp, popt, probe_error=0.5):
     """
     Returns a dict with R² (least-squares) and χ² (chi-squared) metrics.
     
-    R²  — fraction of variance explained by the fit. 1.0 = perfect.
-    χ²  — sum of squared residuals weighted by variance. ~1.0/dof = good fit.
-    χ²_reduced — χ² divided by degrees of freedom. Should be ≈ 1 for a good fit.
+    probe_error: The independent instrumental uncertainty of your thermometer.
+                 (Change this to match your specific hardware, e.g., 0.1 or 0.5)
     """
     y_pred = exponential(time, *popt)
     residuals = temp - y_pred
     
-    # ── R² (coefficient of determination) ───────────────────────────────────
-    ss_res = np.sum(residuals ** 2)               # sum of squared residuals
-    ss_tot = np.sum((temp - np.mean(temp)) ** 2)  # total variance
+    #R² 
+    ss_res = np.sum(residuals ** 2)              
+    ss_tot = np.sum((temp - np.mean(temp)) ** 2)  
     r_squared = 1 - (ss_res / ss_tot)
     
-    # ── χ² ──────────────────────────────────────────────────────────────────
-    # σ is estimated from the residuals themselves (no external error bars).
-    # This is standard when individual measurement uncertainties are unknown.
-    sigma = np.std(residuals, ddof=len(popt))     # ddof = number of fit params
-    if sigma == 0:
-        chi2 = np.nan
-        chi2_red = np.nan
-    else:
-        chi2 = np.sum((residuals / sigma) ** 2)
-        dof  = len(temp) - len(popt)              # degrees of freedom
-        chi2_red = chi2 / dof
+    #χ²
+   
+    chi2 = np.sum((residuals / probe_error) ** 2)
+    dof  = len(temp) - len(popt)              
+    chi2_red = chi2 / dof
     
     return {
         'R2':       r_squared,
