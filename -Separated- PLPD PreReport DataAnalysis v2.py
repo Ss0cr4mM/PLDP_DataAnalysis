@@ -4,6 +4,8 @@ import pandas as pd
 from pathlib import Path
 from scipy.optimize import curve_fit
 
+#Hola
+
 
 def importer(name):
     csv_path = Path.cwd() / name
