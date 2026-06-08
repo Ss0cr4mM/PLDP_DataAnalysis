@@ -51,7 +51,7 @@ time = [time1, time2, time3, time4, time5, time6, time7]  # for easy iteration
 # Temperature arrays
 # Run 1: aluminium probe wasn't placed on time → drop first 2000 samples
 aluminium1 = data_20["Temperature 1 (°C) Run #1"][2000:]
-time1_Al   = time1[:-2000]          # trim time to match
+time1_Al   = time1[2000:] - time1[2000]        # trim time to match
 
 aluminium2 = data_20["Temperature 3 (°C) Run #3"]
 aluminium3 = data_27["Temperature 3 (°C) Run #1"]
@@ -66,9 +66,9 @@ tape3 = data_27["Temperature 2 (°C) Run #1"]
 tape4 = data_03["Temperature 1 (°C) Run #1"]
 tape5 = data_03["Temperature 3 (°C) Run #2"]
 tape6 = data_05["Temperature 3 (°C) Run #2"][2000:]
-time6_tape = time6[2000:]          # trim time to match
+time6_tape = time6[2000:]  - time6[2000]        # trim time to match
 tape7 = data_05["Temperature 1 (°C) Run #3"][2000:]
-time7_tape = time7[2000:]          # trim time to match
+time7_tape = time7[2000:] - time7[2000]         # trim time to match
 
 tape = [tape1, tape2, tape3, tape4, tape5, tape6, tape7]  # for easy iteration
 
@@ -80,12 +80,13 @@ glass5 = data_03["Temperature 1 (°C) Run #2"]
 
 glass = [glass1, glass2, glass3, glass4, glass5]  # for easy iteration
 
-copper1 = data_05["Temperature 1 (°C) Run #2"][2000:]
-copper2 = data_05["Temperature 2 (°C) Run #2"][2000:]
-time6_copper = time6[2000:]          # trim time to match
-copper3 = data_05["Temperature 2 (°C) Run #3"][2000:]
-time7_copper = time7[2000:]          # trim time to match
-copper4 = data_05["Temperature 3 (°C) Run #3"]
+copper1 = data_05["Temperature 1 (°C) Run #2"][3000:]
+time61_copper = time6[3000:] - time6[3000]
+copper2 = data_05["Temperature 2 (°C) Run #2"][4000:]
+time62_copper = time6[4000:] - time6[4000]         # trim time to match
+copper3 = data_05["Temperature 2 (°C) Run #3"][3000:]
+time7_copper = time7[3000:] - time7[3000]         # trim time to match
+copper4 = data_05["Temperature 3 (°C) Run #3"][3000:]
 
 copper = [copper1, copper2, copper3, copper4]  # for easy iteration
 
@@ -156,7 +157,7 @@ glass_stitched.append(ref_glass) # Add the reference glass array back to the sti
 glass = np.concatenate([np.concatenate(glass_stitched), ref_glass])
 
 # Copper
-time_copper = [time6_copper, time6_copper, time7_copper, time7] # Only the last 2 runs have copper data
+time_copper = [time61_copper, time62_copper, time7_copper, time7_copper] # Only the last 2 runs have copper data
 time_copper_stitched, ref_time_copper, copper_stitched, ref_copper = stitch_times(time_copper, copper)
 time_copper_stitched.append(ref_time_copper) # Add the reference time array back to the stitched time arrays
 time_copper = np.concatenate([np.concatenate(time_copper_stitched), ref_time_copper])
