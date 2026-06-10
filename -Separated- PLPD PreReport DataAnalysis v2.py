@@ -185,22 +185,26 @@ def goodness_of_fit(time, temp, popt, probe_error=0.5):
     return {'R2': r_squared, 'chi2': chi2, 'chi2_red': chi2_red, 'dof': dof}
 
 def fit_single_run(time, temp):
+    linear_temp = np.log(temp)
     try:
-        popt, _ = curve_fit(linear_model, time, temp,
-                            p0=(temp[0] - T_AMBIENT, -0.001), maxfev=10000)
-        return popt
+        popt, pcov = curve_fit(linear_model, time, linear_temp,
+                            p0=(-0.001, np.log(70)), maxfev=10000)
+        perr = np.sqrt(np.diag(pcov)) # Standard deviation error in parameters
+        return popt, perr 
     except RuntimeError:
         return None
 
 def fit_per_run_pairs(times, temps, label):
     results = []
+    results_errors = []
     for i, (t, temp) in enumerate(zip(times, temps), 1):
         t_c, temp_c = clean(np.asarray(t), np.asarray(temp))
-        popt = fit_single_run(t_c, temp_c)
+        popt, perr = fit_single_run(t_c, temp_c)
         if popt is not None:
             gof = goodness_of_fit(t_c, temp_c, popt)
             results.append(popt)
-            print(f"  Run {i}: a = {popt[0]:.4f},  b = {popt[1]:.2e} | "
+            results_errors.append(perr)
+            print(f"  Run {i}: a = {popt[0]:.4f} +/- {perr[0]:.4g},  b = {popt[1]:.2e} +/- {perr[1]:.4g} | "
                   f"R² = {gof['R2']:.4f},  χ²_red = {gof['chi2_red']:.4f}  (dof = {gof['dof']})")
         else:
             print(f"  Run {i}: fit failed")
