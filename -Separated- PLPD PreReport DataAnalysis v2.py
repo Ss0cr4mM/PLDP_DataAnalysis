@@ -188,7 +188,7 @@ def fit_single_run(time, temp):
     linear_temp = np.log(temp)
     try:
         popt, pcov = curve_fit(linear_model, time, linear_temp,
-                            p0=(-0.001, np.log(70)), maxfev=10000)
+                            p0=(-0.001, np.log(70)), maxfev=10000, sigma = np.log(0.5), absolute_sigma=True)
         perr = np.sqrt(np.diag(pcov)) # Standard deviation error in parameters
         return popt, perr 
     except RuntimeError:
