@@ -212,10 +212,11 @@ def fit_per_run_pairs(times, temps, label):
         print(f"{label}: all runs failed.\n")
         return None
     results = np.array(results)
-    mean = results.mean(axis=0)
-    sem  = results.std(axis=0, ddof=1) / np.sqrt(len(results)) if len(results) > 1 else np.zeros(2)
-    print(f"{label} summary — a = {mean[0]:.4f} ± {sem[0]:.4f},  b = {mean[1]:.2e} ± {sem[1]:.2e}\n")
-    return mean, sem
+    mean_results = results.mean(axis=0)
+    results_errors = np.array(results_errors)
+    mean_results_errors = results_errors.mean(axis=0)
+    print(f"{label} summary — a = {mean_results[0]:.4f} ± {mean_results_errors[0]:.2e},  b = {mean_results[1]:.4f} ± {mean_results_errors[1]:.2e}\n")
+    return mean_results, mean_results_errors
 
 print("Exponential fit  T(t) = a·exp(b·t) + T_ambient,  per-run results:\n")
 
