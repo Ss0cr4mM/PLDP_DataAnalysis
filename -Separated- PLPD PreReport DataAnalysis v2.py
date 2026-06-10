@@ -220,16 +220,16 @@ def fit_per_run_pairs(times, temps, label):
 
 print("Exponential fit  T(t) = a·exp(b·t) + T_ambient,  per-run results:\n")
 
-popt_Al,     sem_Al     = fit_per_run_pairs(time_Al_stitched,     aluminium_stitched, "Aluminium")
-popt_tape,   sem_tape   = fit_per_run_pairs(time_tape_stitched,   tape_stitched,      "Tape")
-popt_glass,  sem_glass  = fit_per_run_pairs(time_glass_stitched,  glass_stitched,     "Glass")
-popt_copper, sem_copper = fit_per_run_pairs(time_copper_stitched, copper_stitched,    "Copper")
+popt_Al,     perr_Al     = fit_per_run_pairs(time_Al_stitched,     aluminium_stitched, "Aluminium")
+popt_tape,   perr_tape   = fit_per_run_pairs(time_tape_stitched,   tape_stitched,      "Tape")
+popt_glass,  perr_glass  = fit_per_run_pairs(time_glass_stitched,  glass_stitched,     "Glass")
+popt_copper, perr_copper = fit_per_run_pairs(time_copper_stitched, copper_stitched,    "Copper")
 
 datasets = [
-    (time_Al_c,     al_c,     popt_Al,     sem_Al,     0.04, 'Aluminium'),
-    (time_tape_c,   tape_c,   popt_tape,   sem_tape,   0.95, 'Tape'),
-    (time_glass_c,  glass_c,  popt_glass,  sem_glass,  0.90, 'Glass'),
-    (time_copper_c, copper_c, popt_copper, sem_copper, 0.02, 'Copper'),
+    (time_Al_c,     al_c,     popt_Al,     perr_Al,     0.04, 'Aluminium'),
+    (time_tape_c,   tape_c,   popt_tape,   perr_tape,   0.95, 'Tape'),
+    (time_glass_c,  glass_c,  popt_glass,  perr_glass,  0.90, 'Glass'),
+    (time_copper_c, copper_c, popt_copper, perr_copper, 0.02, 'Copper'),
 ]
 
 print("Global goodness-of-fit  —  mean fit vs. full concatenated dataset:\n")
