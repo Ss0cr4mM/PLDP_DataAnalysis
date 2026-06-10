@@ -233,9 +233,9 @@ datasets = [
 ]
 
 print("Global goodness-of-fit  —  mean fit vs. full concatenated dataset:\n")
-for t, temp, popt, sem, emissivity, label in datasets:
+for t, temp, popt, perr, emissivity, label in datasets:
     gof = goodness_of_fit(t, temp, popt)
-    print(f"  {label:9s}: k = {popt[1]:.5f} ± {sem[1]:.5f} s⁻¹ | "
+    print(f"  {label:9s}: k = {popt[0]:.5f} ± {perr[0]:.5f} s⁻¹ | "
           f"R² = {gof['R2']:.4f},  χ²_red = {gof['chi2_red']:.4f}  (dof = {gof['dof']})")
 print()
 
@@ -252,17 +252,17 @@ fig, axes = plt.subplots(2, 2, figsize=(10, 8), sharey=True)
 fig.suptitle("Cooling curves with Newton-law fits", fontsize=13)
 for ax, (t, temp, popt, perr, emissivity, label) in zip(axes.flatten(), datasets):
     scatter_c, fit_c = styles[label]
-    ax.scatter(t[::20], temp[::20], s=1, alpha=0.35, color=scatter_c, label='Data')
+    ax.scatter(t[::20], np.log(temp[::20]), s=1, alpha=0.35, color=scatter_c, label='Data')
     x_model = np.linspace(t.min(), t.max(), 500)
     y_model = linear_model(x_model, *popt)
     ax.plot(x_model, y_model, color=fit_c, linewidth=2,
-            label=f'Fit  (k = {popt[1]:.5f} ± {perr[1]:.5f} s⁻¹)')
-    ax.axhline(T_AMBIENT, color='gray', ls=':', lw=1)
+            label=f'Fit  (k = {popt[0]:.5f} ± {perr[0]:.5f} s⁻¹)')
+    ax.axhline(np.log(T_AMBIENT), color='gray', ls=':', lw=1)
     ax.set_title(label)
     ax.set_xlabel("Time (s)")
     ax.legend(markerscale=6, fontsize=8)
-axes[0, 0].set_ylabel("Temperature (°C)")
-axes[1, 0].set_ylabel("Temperature (°C)")
+axes[0, 0].set_ylabel("Log Temperature ln(°C)")
+axes[1, 0].set_ylabel("Log Temperature ln(°C)")
 plt.tight_layout()
 plt.show()
 
