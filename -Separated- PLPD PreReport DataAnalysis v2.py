@@ -172,13 +172,19 @@ time_copper_c, copper_c  = clean(time_copper, copper)
 def linear_model(x, a, b):
     return a * x + b
 
-def goodness_of_fit(time, temp, popt, probe_error=0.5):
+def error_sigma(temp):
+    return 0.5/np.absolute(temp - T_AMBIENT)
+
+def goodness_of_fit(time, temp, popt):
+    linear_temp = np.log(temp)
     y_pred    = linear_model(time, *popt)
-    residuals = temp - y_pred
+    residuals = linear_temp - y_pred
+    residual_norm = residuals/error_sigma(temp)
     ss_res    = np.sum(residuals ** 2)
-    ss_tot    = np.sum((temp - np.mean(temp)) ** 2)
+    ss_tot    = np.sum((linear_temp - np.mean(linear_temp)) ** 2)
     r_squared = 1 - (ss_res / ss_tot)
-    chi2      = np.sum((residuals / probe_error) ** 2)
+    chi2 = np.sum(residual_norm ** 2)
+    #chi2      = np.sum((residuals / probe_error) ** 2)
     dof       = len(temp) - len(popt)
     chi2_red  = chi2 / dof
     return {'R2': r_squared, 'chi2': chi2, 'chi2_red': chi2_red, 'dof': dof}
@@ -187,7 +193,7 @@ def fit_single_run(time, temp):
     linear_temp = np.log(temp)
     try:
         popt, pcov = curve_fit(linear_model, time, linear_temp,
-                            p0=(-0.001, np.log(70)), maxfev=10000, sigma = np.log(0.5), absolute_sigma=True)
+                            p0=(-0.001, np.log(70)), maxfev=10000, sigma = 0.5/np.absolute(temp - T_AMBIENT), absolute_sigma=True)
         perr = np.sqrt(np.diag(pcov)) # Standard deviation error in parameters
         return popt, perr 
     except RuntimeError:
@@ -217,7 +223,7 @@ def fit_per_run_pairs(times, temps, label):
     print(f"{label} summary — a = {mean_results[0]:.4f} ± {mean_results_errors[0]:.2g},  b = {mean_results[1]:.4f} ± {mean_results_errors[1]:.2g}\n")
     return mean_results, mean_results_errors
 
-print("Exponential fit  T(t) = a·exp(b·t) + T_ambient,  per-run results:\n")
+print("Linear fit  T(t) = a·t + b,  per-run results:\n")
 
 popt_Al,     perr_Al     = fit_per_run_pairs(time_Al_stitched,     aluminium_stitched, "Aluminium")
 popt_tape,   perr_tape   = fit_per_run_pairs(time_tape_stitched,   tape_stitched,      "Tape")
@@ -234,7 +240,7 @@ datasets = [
 print("Global goodness-of-fit  —  mean fit vs. full concatenated dataset:\n")
 for t, temp, popt, perr, emissivity, label in datasets:
     gof = goodness_of_fit(t, temp, popt)
-    print(f"  {label:9s}: k = {popt[0]:.5f} ± {perr[0]:.5f} s⁻¹ | "
+    print(f"  {label:9s}: k = {popt[0]:.5f} ± {perr[0]:.3g} s⁻¹ | "
           f"R² = {gof['R2']:.4f},  χ²_red = {gof['chi2_red']:.4f}  (dof = {gof['dof']})")
 print()
 
