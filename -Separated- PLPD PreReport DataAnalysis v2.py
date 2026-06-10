@@ -214,7 +214,7 @@ def fit_per_run_pairs(times, temps, label):
     mean_results = results.mean(axis=0)
     results_errors = np.array(results_errors)
     mean_results_errors = results_errors.mean(axis=0)
-    print(f"{label} summary — a = {mean_results[0]:.4f} ± {mean_results_errors[0]:.2e},  b = {mean_results[1]:.4f} ± {mean_results_errors[1]:.2e}\n")
+    print(f"{label} summary — a = {mean_results[0]:.4f} ± {mean_results_errors[0]:.2g},  b = {mean_results[1]:.4f} ± {mean_results_errors[1]:.2g}\n")
     return mean_results, mean_results_errors
 
 print("Exponential fit  T(t) = a·exp(b·t) + T_ambient,  per-run results:\n")
