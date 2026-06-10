@@ -170,11 +170,11 @@ time_copper_c, copper_c  = clean(time_copper, copper)
 
 # ── Newton-cooling fits (per run → mean ± SEM) ───────────────────────────────
 
-def exponential(x, a, b):
-    return a * np.exp(b * x) + T_AMBIENT
+def linear_model(x, a, b):
+    return a * x + b
 
 def goodness_of_fit(time, temp, popt, probe_error=0.5):
-    y_pred    = exponential(time, *popt)
+    y_pred    = linear_model(time, *popt)
     residuals = temp - y_pred
     ss_res    = np.sum(residuals ** 2)
     ss_tot    = np.sum((temp - np.mean(temp)) ** 2)
@@ -186,7 +186,7 @@ def goodness_of_fit(time, temp, popt, probe_error=0.5):
 
 def fit_single_run(time, temp):
     try:
-        popt, _ = curve_fit(exponential, time, temp,
+        popt, _ = curve_fit(linear_model, time, temp,
                             p0=(temp[0] - T_AMBIENT, -0.001), maxfev=10000)
         return popt
     except RuntimeError:
@@ -249,7 +249,7 @@ for ax, (t, temp, popt, perr, emissivity, label) in zip(axes.flatten(), datasets
     scatter_c, fit_c = styles[label]
     ax.scatter(t[::20], temp[::20], s=1, alpha=0.35, color=scatter_c, label='Data')
     x_model = np.linspace(t.min(), t.max(), 500)
-    y_model = exponential(x_model, *popt)
+    y_model = linear_model(x_model, *popt)
     ax.plot(x_model, y_model, color=fit_c, linewidth=2,
             label=f'Fit  (k = {popt[1]:.5f} ± {perr[1]:.5f} s⁻¹)')
     ax.axhline(T_AMBIENT, color='gray', ls=':', lw=1)
