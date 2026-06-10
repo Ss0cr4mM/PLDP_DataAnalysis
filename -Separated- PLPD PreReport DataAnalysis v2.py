@@ -193,7 +193,7 @@ def fit_single_run(time, temp):
     linear_temp = np.log(temp)
     try:
         popt, pcov = curve_fit(linear_model, time, linear_temp,
-                            p0=(-0.001, np.log(70)), maxfev=10000, sigma = 0.5/np.absolute(temp - T_AMBIENT), absolute_sigma=True)
+                            p0=(-0.001, np.log(70)), maxfev=10000, sigma = 0.5/np.absolute(temp - T_AMBIENT), absolute_sigma=False)
         perr = np.sqrt(np.diag(pcov)) # Standard deviation error in parameters
         return popt, perr 
     except RuntimeError:
@@ -209,7 +209,7 @@ def fit_per_run_pairs(times, temps, label):
             gof = goodness_of_fit(t_c, temp_c, popt)
             results.append(popt)
             results_errors.append(perr)
-            print(f"  Run {i}: a = {popt[0]:.4f} +/- {perr[0]:.4g},  b = {popt[1]:.2e} +/- {perr[1]:.4g} | "
+            print(f"  Run {i}: a = {popt[0]:.5f} +/- {perr[0]:.4g},  b = {popt[1]:.5f} +/- {perr[1]:.4g} | "
                   f"R² = {gof['R2']:.4f},  χ²_red = {gof['chi2_red']:.4f}  (dof = {gof['dof']})")
         else:
             print(f"  Run {i}: fit failed")
@@ -262,7 +262,7 @@ for ax, (t, temp, popt, perr, emissivity, label) in zip(axes.flatten(), datasets
     y_model = linear_model(x_model, *popt)
     ax.plot(x_model, y_model, color=fit_c, linewidth=2,
             label=f'Fit  (k = {popt[0]:.5f} ± {perr[0]:.5f} s⁻¹)')
-    ax.axhline(np.log(T_AMBIENT), color='gray', ls=':', lw=1)
+    #ax.axhline(np.log(T_AMBIENT), color='gray', ls=':', lw=1)
     ax.set_title(label)
     ax.set_xlabel("Time (s)")
     ax.legend(markerscale=6, fontsize=8)
