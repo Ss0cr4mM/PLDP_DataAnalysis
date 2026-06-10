@@ -15,9 +15,8 @@ DM_WATER   = 0.010          # kg   filling uncertainty (~10 ml)
 C_WATER    = 4186.0         # J kg⁻¹ K⁻¹
 DC_WATER   = 40.0           # J kg⁻¹ K⁻¹ (T-dependence of c over 50–80 °C)
 
-JAR_D      = 0.085          # m, outer diameter
-JAR_H      = 0.105          # m, wetted height
-AREA       = np.pi * JAR_D * JAR_H     # ≈ 0.028 m²
+
+AREA       = 0.28*0.12
 DAREA_REL  = 0.05           # 5 % relative uncertainty on A
 
 SIGMA_T_SYS = 0.5           # °C  systematic probe-calibration uncertainty
