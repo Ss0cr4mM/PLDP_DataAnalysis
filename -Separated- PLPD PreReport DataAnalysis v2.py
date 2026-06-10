@@ -4,8 +4,32 @@ import pandas as pd
 from pathlib import Path
 from scipy.optimize import curve_fit
 
-#Hola mundo
+# ── Physical constants & experimental parameters ─────────────────────────────
 
+sigma      = 5.67e-8        # W m⁻² K⁻⁴  Stefan–Boltzmann constant
+T_AMBIENT  = 22.0           # °C   measured room temperature
+T_AMB_K    = T_AMBIENT + 273.15
+
+M_WATER    = 0.500          # kg   (500 ml jar)
+DM_WATER   = 0.010          # kg   filling uncertainty (~10 ml)
+C_WATER    = 4186.0         # J kg⁻¹ K⁻¹
+DC_WATER   = 40.0           # J kg⁻¹ K⁻¹ (T-dependence of c over 50–80 °C)
+
+JAR_D      = 0.085          # m, outer diameter
+JAR_H      = 0.105          # m, wetted height
+AREA       = np.pi * JAR_D * JAR_H     # ≈ 0.028 m²
+DAREA_REL  = 0.05           # 5 % relative uncertainty on A
+
+SIGMA_T_SYS = 0.5           # °C  systematic probe-calibration uncertainty
+
+EMISSIVITY = {    # ε,    Δε
+    'Aluminium': (0.04, 0.02),
+    'Tape':      (0.95, 0.03),
+    'Glass':     (0.90, 0.05),
+    'Copper':    (0.02, 0.01),
+}
+
+# ── Data import ──────────────────────────────────────────────────────────────
 
 def importer(name):
     csv_path = Path.cwd() / name
@@ -14,28 +38,10 @@ def importer(name):
     arrays = {col: pd.to_numeric(df[col], errors='coerce').to_numpy() for col in df.columns}
     return arrays
 
-
-def finder(target_temp, array):
-    """Returns the index of the first value in array that is <= target_temp.
-    Used to find where one run's starting temperature matches another run's cooling curve.
-    Returns -1 if no such value is found."""
-    for i in range(len(array)):
-        if array[i] <= target_temp:
-            return i
-    return -1
-
-
-def exponential(x, a, b):
-    """Newton's law of cooling: T(t) = a·exp(b·t) + T_ambient"""
-    return a * np.exp(b * x) + T_AMBIENT
-
-
-# ── Load raw data ────────────────────────────────────────────────────────────
-
 data_20 = importer("Temp Measurements 20-05-26.csv")
 data_27 = importer("Temp Measurements 27-05-26.csv")
-data_03 = importer("Temp Measurements 03-06-26.csv") 
-data_05 = importer("Temp Measurements 05-06-26.csv") 
+data_03 = importer("Temp Measurements 03-06-26.csv")
+data_05 = importer("Temp Measurements 05-06-26.csv")
 
 # Time arrays (one per run; all materials in a run share the same time axis)
 time1 = data_20["Time (s) Run #1"]
@@ -66,9 +72,9 @@ tape3 = data_27["Temperature 2 (°C) Run #1"]
 tape4 = data_03["Temperature 1 (°C) Run #1"]
 tape5 = data_03["Temperature 3 (°C) Run #2"]
 tape6 = data_05["Temperature 3 (°C) Run #2"][2000:]
-time6_tape = time6[2000:]  - time6[2000]        # trim time to match
+time6_tape = time6[2000:] - time6[2000]        # trim time to match
 tape7 = data_05["Temperature 1 (°C) Run #3"][2000:]
-time7_tape = time7[2000:] - time7[2000]         # trim time to match
+time7_tape = time7[2000:] - time7[2000]        # trim time to match
 
 tape = [tape1, tape2, tape3, tape4, tape5, tape6, tape7]  # for easy iteration
 
@@ -83,86 +89,72 @@ glass = [glass1, glass2, glass3, glass4, glass5]  # for easy iteration
 copper1 = data_05["Temperature 1 (°C) Run #2"][3000:]
 time61_copper = time6[3000:] - time6[3000]
 copper2 = data_05["Temperature 2 (°C) Run #2"][4000:]
-time62_copper = time6[4000:] - time6[4000]         # trim time to match
+time62_copper = time6[4000:] - time6[4000]        # trim time to match
 copper3 = data_05["Temperature 2 (°C) Run #3"][3000:]
-time7_copper = time7[3000:] - time7[3000]         # trim time to match
+time7_copper = time7[3000:] - time7[3000]          # trim time to match
 copper4 = data_05["Temperature 3 (°C) Run #3"][3000:]
 
 copper = [copper1, copper2, copper3, copper4]  # for easy iteration
 
-# ── State constants ───────────────────────────────────
-
-sigma = 5.67e-8  # W/m²K⁴, Stefan-Boltzmann constant
-T_AMBIENT = 22.0  # °C — measured room temperature
-
-
 # ── Stitch runs onto a continuous timeline ───────────────────────────────────
-# Strategy: find the index in run 2 where the temperature matches the *start*
-# of the adjacent run, then offset that run's time axis so the curves join
-# seamlessly.
+
+def finder(target_temp, array):
+    for i in range(len(array)):
+        if array[i] <= target_temp:
+            return i
+    return -1
 
 def max_temperature(array):
-    """Returns the array of the run with the highest initial temperature."""
     first_values = []
     for i in range(len(array)):
         first_values.append(array[i][0])
     winner = first_values.index(max(first_values))
     return winner
 
-
 def stitch_times(time_full, array_material):
-    """Reads the index of the maximum temperature in the material array, then finds the corresponding
-    time for this index in every time array (offset), then deletes the array of maximum temperature (the reference)
-    from the full time array, creating time_ref, then adds the offset to every value in every time in 
-    the full time array, creating the stitched time_ref."""
-    #print(f"Max temperature array index is {max_temperature(array_material)}.")
-    ref_run_time = time_full.pop(max_temperature(array_material))
+    ref_run_time     = time_full.pop(max_temperature(array_material))
     ref_run_material = array_material.pop(max_temperature(array_material))
-    #print(f"Reference run time array is {ref_run_time}.")
-    
+
     for i, item in enumerate(array_material):
-        idx = finder(item[0], ref_run_material) # This is the index position where the initial tempeture is in the reference
-        #print(f"Index found for material {item} is {idx}.")
+        idx = finder(item[0], ref_run_material)
         if idx == -1:
             raise ValueError(f"Could not find temperature {item[0]:.2f} in reference run data.")
-        else:
-            offset = ref_run_time[idx] # Corresponding time for the temperature found in ref_run_material
-            #print(f"Offset for material {item} is {offset:.2f}.")
-            time_array = np.array(time_full[i]) # Convert the time array of the current run to a numpy array for easier manipulation
-            time_full[i] = time_array + offset # Add the offset to every value in the time array of the current run
+        offset       = ref_run_time[idx]
+        time_array   = np.array(time_full[i])
+        time_full[i] = time_array + offset
     return time_full, ref_run_time, array_material, ref_run_material
 
 # Aluminium
-time_Al = [time1_Al, time2, time3, time4, time5] # Only the first 5 runs have aluminium data
+time_Al = [time1_Al, time2, time3, time4, time5]
 time_Al_stitched, ref_time_Al, aluminium_stitched, ref_aluminium = stitch_times(time_Al, aluminium)
-time_Al_stitched.append(ref_time_Al) # Add the reference time array back to the stitched time arrays
-time_Al = np.concatenate([np.concatenate(time_Al_stitched), ref_time_Al])
-aluminium_stitched.append(ref_aluminium) # Add the reference aluminium array back to the stitched aluminium arrays
-aluminium = np.concatenate([np.concatenate(aluminium_stitched), ref_aluminium])
+time_Al_stitched.append(ref_time_Al)
+aluminium_stitched.append(ref_aluminium)
+time_Al    = np.concatenate(time_Al_stitched)
+aluminium  = np.concatenate(aluminium_stitched)
 
 # Tape
-time_tape = [time1, time2, time3, time4, time5, time6_tape, time7_tape] # All runs have tape data
+time_tape = [time1, time2, time3, time4, time5, time6_tape, time7_tape]
 time_tape_stitched, ref_time_tape, tape_stitched, ref_tape = stitch_times(time_tape, tape)
-time_tape_stitched.append(ref_time_tape) # Add the reference time array back to the stitched time arrays
-time_tape = np.concatenate([np.concatenate(time_tape_stitched), ref_time_tape])
-tape_stitched.append(ref_tape) # Add the reference tape array back to the stitched tape arrays
-tape = np.concatenate([np.concatenate(tape_stitched), ref_tape])
+time_tape_stitched.append(ref_time_tape)
+tape_stitched.append(ref_tape)
+time_tape  = np.concatenate(time_tape_stitched)
+tape       = np.concatenate(tape_stitched)
 
 # Glass
-time_glass = [time1, time2, time3, time4, time5] # Only the first 5 runs have glass data
+time_glass = [time1, time2, time3, time4, time5]
 time_glass_stitched, ref_time_glass, glass_stitched, ref_glass = stitch_times(time_glass, glass)
-time_glass_stitched.append(ref_time_glass) # Add the reference time array back to the stitched time arrays
-time_glass = np.concatenate([np.concatenate(time_glass_stitched), ref_time_glass])
-glass_stitched.append(ref_glass) # Add the reference glass array back to the stitched glass arrays
-glass = np.concatenate([np.concatenate(glass_stitched), ref_glass])
+time_glass_stitched.append(ref_time_glass)
+glass_stitched.append(ref_glass)
+time_glass = np.concatenate(time_glass_stitched)
+glass      = np.concatenate(glass_stitched)
 
 # Copper
-time_copper = [time61_copper, time62_copper, time7_copper, time7_copper] # Only the last 2 runs have copper data
+time_copper = [time61_copper, time62_copper, time7_copper, time7_copper]
 time_copper_stitched, ref_time_copper, copper_stitched, ref_copper = stitch_times(time_copper, copper)
-time_copper_stitched.append(ref_time_copper) # Add the reference time array back to the stitched time arrays
-time_copper = np.concatenate([np.concatenate(time_copper_stitched), ref_time_copper])
-copper_stitched.append(ref_copper) # Add the reference copper array back to the stitched copper arrays
-copper = np.concatenate([np.concatenate(copper_stitched), ref_copper])
+time_copper_stitched.append(ref_time_copper)
+copper_stitched.append(ref_copper)
+time_copper = np.concatenate(time_copper_stitched)
+copper      = np.concatenate(copper_stitched)
 
 # ── Clean (remove NaN / Inf) ─────────────────────────────────────────────────
 
@@ -171,19 +163,28 @@ def clean(time_arr, temp_arr):
              np.isnan(time_arr) | np.isinf(time_arr))
     return time_arr[mask], temp_arr[mask]
 
-time_Al_c, al_c = clean(time_Al, aluminium)
-time_tape_c, tape_c = clean(time_tape, tape)
-time_glass_c, glass_c = clean(time_glass, glass)
-time_copper_c, copper_c = clean(time_copper, copper)
+time_Al_c,     al_c      = clean(time_Al,     aluminium)
+time_tape_c,   tape_c    = clean(time_tape,   tape)
+time_glass_c,  glass_c   = clean(time_glass,  glass)
+time_copper_c, copper_c  = clean(time_copper, copper)
 
-# ── Exponential fits ─────────────────────────────────────────────────────────
-# Fit each run independently, then report mean ± std across runs.
-# The run-to-run spread is the physically meaningful uncertainty — it captures
-# probe placement, ambient drift, and stitching imperfections that the
-# covariance matrix cannot see.
+# ── Newton-cooling fits (per run → mean ± SEM) ───────────────────────────────
+
+def exponential(x, a, b):
+    return a * np.exp(b * x) + T_AMBIENT
+
+def goodness_of_fit(time, temp, popt, probe_error=0.5):
+    y_pred    = exponential(time, *popt)
+    residuals = temp - y_pred
+    ss_res    = np.sum(residuals ** 2)
+    ss_tot    = np.sum((temp - np.mean(temp)) ** 2)
+    r_squared = 1 - (ss_res / ss_tot)
+    chi2      = np.sum((residuals / probe_error) ** 2)
+    dof       = len(temp) - len(popt)
+    chi2_red  = chi2 / dof
+    return {'R2': r_squared, 'chi2': chi2, 'chi2_red': chi2_red, 'dof': dof}
 
 def fit_single_run(time, temp):
-    """Fit one run; return (a, b) or None on failure."""
     try:
         popt, _ = curve_fit(exponential, time, temp,
                             p0=(temp[0] - T_AMBIENT, -0.001), maxfev=10000)
@@ -191,204 +192,197 @@ def fit_single_run(time, temp):
     except RuntimeError:
         return None
 
-def goodness_of_fit(time, temp, popt, probe_error=0.5):
-    """
-    Returns a dict with R² (least-squares) and χ² (chi-squared) metrics.
-    
-    probe_error: The independent instrumental uncertainty of your thermometer.
-                 (Change this to match your specific hardware, e.g., 0.1 or 0.5)
-    """
-    y_pred = exponential(time, *popt)
-    residuals = temp - y_pred
-    
-    #R² 
-    ss_res = np.sum(residuals ** 2)              
-    ss_tot = np.sum((temp - np.mean(temp)) ** 2)  
-    r_squared = 1 - (ss_res / ss_tot)
-    
-    #χ²
-   
-    chi2 = np.sum((residuals / probe_error) ** 2)
-    dof  = len(temp) - len(popt)              
-    chi2_red = chi2 / dof
-    
-    return {
-        'R2':       r_squared,
-        'chi2':     chi2,
-        'chi2_red': chi2_red,
-        'dof':      dof,
-    }
-
-
 def fit_per_run_pairs(times, temps, label):
     results = []
     for i, (t, temp) in enumerate(zip(times, temps), 1):
-        t_arr    = np.asarray(t)
-        temp_arr = np.asarray(temp)
-        t_c, temp_c = clean(t_arr, temp_arr)
+        t_c, temp_c = clean(np.asarray(t), np.asarray(temp))
         popt = fit_single_run(t_c, temp_c)
-        
         if popt is not None:
             gof = goodness_of_fit(t_c, temp_c, popt)
             results.append(popt)
             print(f"  Run {i}: a = {popt[0]:.4f},  b = {popt[1]:.2e} | "
-                  f"R² = {gof['R2']:.4f},  "
-                  f"χ²_red = {gof['chi2_red']:.4f}  (dof = {gof['dof']})")
+                  f"R² = {gof['R2']:.4f},  χ²_red = {gof['chi2_red']:.4f}  (dof = {gof['dof']})")
         else:
             print(f"  Run {i}: fit failed")
-
     if not results:
         print(f"{label}: all runs failed.\n")
         return None
-
     results = np.array(results)
     mean = results.mean(axis=0)
-    std  = results.std(axis=0, ddof=1) if results.shape[0] > 1 else np.array([0.0, 0.0])
-    sem = std / np.sqrt(results.shape[0]) if results.shape[0] > 1 else np.array([0.0, 0.0])
-
-    print(f"{label} summary — "
-          f"a = {mean[0]:.4f} ± {sem[0]:.4f},  "
-          f"b = {mean[1]:.2e} ± {sem[1]:.2e}\n")
-    return mean, std
+    sem  = results.std(axis=0, ddof=1) / np.sqrt(len(results)) if len(results) > 1 else np.zeros(2)
+    print(f"{label} summary — a = {mean[0]:.4f} ± {sem[0]:.4f},  b = {mean[1]:.2e} ± {sem[1]:.2e}\n")
+    return mean, sem
 
 print("Exponential fit  T(t) = a·exp(b·t) + T_ambient,  per-run results:\n")
 
-# Fit per stitched run pair for each material
-popt_Al, sem_Al   = fit_per_run_pairs(time_Al_stitched, aluminium_stitched, "Aluminium")
-popt_tape, sem_tape = fit_per_run_pairs(time_tape_stitched, tape_stitched, "Tape")
-popt_glass, sem_glass = fit_per_run_pairs(time_glass_stitched, glass_stitched, "Glass")
-popt_copper, sem_copper = fit_per_run_pairs(time_copper_stitched, copper_stitched, "Copper")
+popt_Al,     sem_Al     = fit_per_run_pairs(time_Al_stitched,     aluminium_stitched, "Aluminium")
+popt_tape,   sem_tape   = fit_per_run_pairs(time_tape_stitched,   tape_stitched,      "Tape")
+popt_glass,  sem_glass  = fit_per_run_pairs(time_glass_stitched,  glass_stitched,     "Glass")
+popt_copper, sem_copper = fit_per_run_pairs(time_copper_stitched, copper_stitched,    "Copper")
 
 datasets = [
-    (time_Al_c,       al_c,        popt_Al,      sem_Al,      0.04,  'Aluminium'),
-    (time_tape_c,     tape_c,      popt_tape,    sem_tape,    0.95,  'Tape'),
-    (time_glass_c,    glass_c,     popt_glass,   sem_glass,   0.9,    'Glass'),
-    (time_copper_c,   copper_c,    popt_copper,  sem_copper,  0.02,   'Copper'),
+    (time_Al_c,     al_c,     popt_Al,     sem_Al,     0.04, 'Aluminium'),
+    (time_tape_c,   tape_c,   popt_tape,   sem_tape,   0.95, 'Tape'),
+    (time_glass_c,  glass_c,  popt_glass,  sem_glass,  0.90, 'Glass'),
+    (time_copper_c, copper_c, popt_copper, sem_copper, 0.02, 'Copper'),
 ]
 
 print("Global goodness-of-fit  —  mean fit vs. full concatenated dataset:\n")
-
 for t, temp, popt, sem, emissivity, label in datasets:
-    if popt is None:
-        print(f"  {label}: no fit available, skipping.")
-        continue
-
     gof = goodness_of_fit(t, temp, popt)
-    print(f"  {label}: k = {popt[1]:.5f} ± {sem[1]:.5f} s⁻¹ || R² = {gof['R2']:.4f},  "
-          f"χ²_red = {gof['chi2_red']:.4f}  (dof = {gof['dof']})")
-
+    print(f"  {label:9s}: k = {popt[1]:.5f} ± {sem[1]:.5f} s⁻¹ | "
+          f"R² = {gof['R2']:.4f},  χ²_red = {gof['chi2_red']:.4f}  (dof = {gof['dof']})")
 print()
 
-# Computation of total radiative energy lost by each material, using the Stefan-Boltzmann law:
-# P = εσA(T⁴ - T_env⁴)
-
-print("--- TOTAL RADIATIVE ENERGY LOST ---")
-
-total_energies = []
-energy_errors = []
-total_energies_model = []
-energy_errors_model = []
-
-for t, temp, popt, sem, emissivity, label in datasets:
-    time_model = np.linspace(t.min(), t.max(), 5000)
-    T_model_K = exponential(time_model, *popt) + 273.15
-    T_K = temp + 273.15
-    T_env_K = T_AMBIENT + 273.15
-    dt = np.mean(np.diff(t, prepend=t[0]))  # Time intervals (with zero prepended for the first point)
-
-    P_rad_flux = sigma * emissivity * (T_K**4 - T_env_K**4) 
-    E_total = np.sum(P_rad_flux * dt)
-    
-    A = popt[0]
-    K = popt[1]
-    # P_uncertainty = (4 * sigma * emissivity * (T_K**3))   # Uncertainty in power due to uncertainty in cooling constant k
-    P_uncertainty = np.sqrt((4 * sigma * emissivity * np.exp(K * t) * (A * np.exp(K * t) - T_env_K)**3 * sem[0])**2 + (4 * sigma * emissivity * A * t * np.exp(K * t) * (A * np.exp(K * t) - T_env_K)**3 * sem[1])**2)  # Uncertainty in power due to uncertainty in cooling constant k and A
-    P_rel_uncertainty = P_uncertainty / P_rad_flux * 100  # Relative uncertainty in power due to uncertainty in k
-
-    E_error = np.sqrt(np.sum((P_uncertainty * dt)**2))
-    E_rel_error = E_error / E_total * 100  # Relative error in total energy
-
-    total_energies.append(E_total)
-    energy_errors.append(E_error)  
-
-    print(f"{label}:")
-    print(f"  Mean Power Radiated = {np.mean(P_rad_flux):,.2f} ± {np.mean(P_rel_uncertainty):,.2f} % W/m^2 || Total Energy = {E_total:,.2f} ± {E_rel_error:,.2f} % J/m²\n")
-
-
-# ── Plot ─────────────────────────────────────────────────────────────────────
-# Each material gets its own subplot.
-# scatter = light/muted tone; fit line = deep/saturated tone of the same hue.
-# (scatter_color, fit_color, title)
+# ── PLOT 1 — cooling curves + Newton fits ────────────────────────────────────
 
 styles = {
-    'Aluminium': ('#7EB8E8', '#1A5F99'),   # light blue  / deep blue
-    'Tape':      ('#FFBA7A', '#C85A00'),   # light orange / deep orange
-    'Glass':     ('#7DD17D', '#1E6E1E'),   # light green / deep green
-    'Copper':    ("#F460ED", "#6D138B"),   # light violet  / deep violet
+    'Aluminium': ('#7EB8E8', '#1A5F99'),
+    'Tape':      ('#FFBA7A', '#C85A00'),
+    'Glass':     ('#7DD17D', '#1E6E1E'),
+    'Copper':    ('#F490ED', '#6D138B'),
 }
 
-
-fig, axes = plt.subplots(2, 2, figsize=(10, 10), sharey=True)
-fig.suptitle("Cooling curves — Aluminium, Tape, Glass, Copper", fontsize=13)
-
+fig, axes = plt.subplots(2, 2, figsize=(10, 8), sharey=True)
+fig.suptitle("Cooling curves with Newton-law fits", fontsize=13)
 for ax, (t, temp, popt, perr, emissivity, label) in zip(axes.flatten(), datasets):
     scatter_c, fit_c = styles[label]
-
-    ax.scatter(t, temp, s=1, alpha=0.35, color=scatter_c, label='Data')
-    if popt is not None:
-        x_model = np.linspace(t.min(), t.max(), 500)
-        y_model = exponential(x_model, *popt)
-        ax.plot(x_model, y_model, color=fit_c, linewidth=2,
-                label=f'Fit  (k = {popt[1]:.5f} ± {perr[1]:.5f} s⁻¹)')
-
+    ax.scatter(t[::20], temp[::20], s=1, alpha=0.35, color=scatter_c, label='Data')
+    x_model = np.linspace(t.min(), t.max(), 500)
+    y_model = exponential(x_model, *popt)
+    ax.plot(x_model, y_model, color=fit_c, linewidth=2,
+            label=f'Fit  (k = {popt[1]:.5f} ± {perr[1]:.5f} s⁻¹)')
+    ax.axhline(T_AMBIENT, color='gray', ls=':', lw=1)
     ax.set_title(label)
     ax.set_xlabel("Time (s)")
     ax.legend(markerscale=6, fontsize=8)
-
 axes[0, 0].set_ylabel("Temperature (°C)")
+axes[1, 0].set_ylabel("Temperature (°C)")
 plt.tight_layout()
-plt.savefig("cooling_curves.pdf", format="pdf", bbox_inches="tight")
 plt.show()
 
+# ── PLOT 2 — f_rad = P_rad / P_total vs time ─────────────────────────────────
 
-t, temp, popt, sem, emissivity, label = zip(*datasets)
+BIN_DT = 60.0   # s — bin width for averaging before numerical differentiation
 
-plt.figure(figsize=(8,6))
+def bin_average(t, y, dt=BIN_DT):
+    edges = np.arange(t.min(), t.max() + dt, dt)
+    idx   = np.digitize(t, edges)
+    tb, yb, ysem = [], [], []
+    for k in range(1, len(edges)):
+        m = idx == k
+        if m.sum() < 10:
+            continue
+        tb.append(t[m].mean())
+        yb.append(y[m].mean())
+        ysem.append(y[m].std(ddof=1) / np.sqrt(m.sum()))
+    return np.array(tb), np.array(yb), np.array(ysem)
 
-plt.errorbar(
-        emissivity, 
-        total_energies, 
-        yerr=energy_errors, 
-        fmt='o', 
-        color='purple', 
-        markersize=8, 
-        capsize=5,
-        label='Experimental Data')
+def frad_from_data(t_run, T_run, eps, deps):
+    t, T, T_sem = bin_average(*clean(t_run, T_run))
+    dTdt  = np.gradient(T, t)
+    T_K   = T + 273.15
+    P_rad = eps * sigma * AREA * (T_K**4 - T_AMB_K**4)
+    P_tot = -M_WATER * C_WATER * dTdt
+    dPrad_rel = np.sqrt((deps/eps)**2 + DAREA_REL**2 +
+                        (4*T_K**3 * SIGMA_T_SYS / (T_K**4 - T_AMB_K**4))**2)
+    sdTdt     = np.sqrt(2) * T_sem / (2 * BIN_DT)
+    dPtot_rel = np.sqrt((DM_WATER/M_WATER)**2 + (DC_WATER/C_WATER)**2 +
+                        (sdTdt / np.abs(dTdt))**2)
+    mask  = P_tot > 1.0
+    f     = P_rad[mask] / P_tot[mask]
+    f_err = f * np.sqrt(dPrad_rel[mask]**2 + dPtot_rel[mask]**2)
+    return t[mask], f, f_err
 
+# reference run per material (returned separately by stitch_times)
+plot2_data = [
+    (ref_time_Al,     ref_aluminium, 'Aluminium'),
+    (ref_time_tape,   ref_tape,      'Tape'),
+    (ref_time_glass,  ref_glass,     'Glass'),
+    (ref_time_copper, ref_copper,    'Copper'),
+]
 
-for i in range(4):
-    y_offset = -20 if i == 1 else 15
-    short_label = label[i].split(' (')[0]
-    
-    plt.annotate(
-        short_label, 
-        (emissivity[i], total_energies[i]), 
-        textcoords="offset points", 
-        xytext=(0, y_offset), 
-        ha='center',
-        fontsize=10
-    )
-
-coeffs = np.polyfit(emissivity, total_energies, 1)
-trend_x = np.linspace(0, 1.0, 100)
-trend_y = np.polyval(coeffs, trend_x)
-plt.plot(trend_x, trend_y, '--', color='gray', alpha=0.5, label='Linear Fit')
-plt.title("Relationship between Emissivity and Total Energy Lost")
-plt.xlabel("Emissivity ($\epsilon$)")
-plt.ylabel("Total Energy Lost ($J/m^2$)")
-plt.xlim(-0.05, 1.05)
-plt.grid(True, alpha=0.3)
-plt.legend()
-
+fig2, ax2 = plt.subplots(figsize=(9, 6))
+for t_ref, T_ref, label in plot2_data:
+    eps, deps = EMISSIVITY[label]
+    tf, f, f_err = frad_from_data(t_ref, T_ref, eps, deps)
+    _, fc = styles[label]
+    ax2.plot(tf, f, color=fc, lw=1.8,
+             label=f"{label} (ε = {eps:.2f}, f̄ = {f.mean():.2f})")
+    ax2.fill_between(tf, f - f_err, f + f_err, color=fc, alpha=0.18)
+    print(f"  {label:9s}: mean f_rad = {f.mean():.3f} ± {np.mean(f_err):.3f}")
+ax2.set_xlabel("Time (s)")
+ax2.set_ylabel(r"$f_\mathrm{rad} = P_\mathrm{rad}\,/\,P_\mathrm{total}$")
+ax2.set_title("Radiative fraction of the heat loss — computed directly from T(t) data")
+ax2.set_ylim(bottom=0)
+ax2.grid(alpha=0.3)
+ax2.legend(fontsize=9)
+plt.tight_layout()
 plt.show()
 
+# ── PLOT 3 — total radiated energy vs emissivity ─────────────────────────────
+
+T_HI, T_LO = 75.0, 58.0
+E_TOTAL_WINDOW = M_WATER * C_WATER * (T_HI - T_LO)
+
+print("\n" + "═" * 70)
+print(f"RADIATED ENERGY over the common window {T_HI:.0f} → {T_LO:.0f} °C "
+      f"(total heat lost = {E_TOTAL_WINDOW/1e3:.1f} kJ per jar)")
+print("═" * 70)
+
+# full stitched dataset per material
+plot3_data = [
+    (time_Al_c,     al_c,     'Aluminium'),
+    (time_tape_c,   tape_c,   'Tape'),
+    (time_glass_c,  glass_c,  'Glass'),
+    (time_copper_c, copper_c, 'Copper'),
+]
+
+eps_list, deps_list, E_list, dE_list, labels = [], [], [], [], []
+for t_all, y_all, label in plot3_data:
+    eps, deps = EMISSIVITY[label]
+    order = np.argsort(t_all)
+    tb, Tb, _ = bin_average(t_all[order], y_all[order], dt=30.0)
+    win = (Tb <= T_HI) & (Tb >= T_LO)
+    tw, Tw = tb[win], Tb[win]
+    T_K  = Tw + 273.15
+    Pr   = eps * sigma * AREA * (T_K**4 - T_AMB_K**4)
+    E    = np.trapezoid(Pr, tw)
+    rel  = np.sqrt((deps/eps)**2 + DAREA_REL**2 +
+                   (np.mean(4*T_K**3) * SIGMA_T_SYS /
+                    np.mean(T_K**4 - T_AMB_K**4))**2)
+    dE   = E * rel
+    eps_list.append(eps); deps_list.append(deps)
+    E_list.append(E);     dE_list.append(dE);     labels.append(label)
+    print(f"  {label:9s}: ε = {eps:.2f} ± {deps:.2f} | "
+          f"E_rad = {E:8.1f} ± {dE:6.1f} J "
+          f"({E/E_TOTAL_WINDOW*100:5.1f} % of total) | "
+          f"cooling time {tw.max()-tw.min():6.0f} s")
+
+eps_a, E_a, dE_a = map(np.array, (eps_list, E_list, dE_list))
+
+w = 1 / dE_a**2
+coeffs, cov = np.polyfit(eps_a, E_a, 1, w=np.sqrt(w), cov=True)
+slope, intercept = coeffs
+dslope = np.sqrt(cov[0, 0])
+print(f"\n  Weighted linear fit: E = ({slope:.0f} ± {dslope:.0f})·ε "
+      f"+ {intercept:.0f} J")
+
+fig3, ax3 = plt.subplots(figsize=(8, 6))
+ax3.errorbar(eps_a, E_a, yerr=dE_a, xerr=deps_list, fmt='o', color='purple',
+             ms=8, capsize=5, label='Experimental data', zorder=3)
+for i, lab in enumerate(labels):
+    dx, dy = (0, 12)
+    if lab == 'Copper':    dx, dy = (10, -20)
+    if lab == 'Aluminium': dx, dy = (35, 8)
+    ax3.annotate(lab, (eps_a[i], E_a[i]), textcoords="offset points",
+                 xytext=(dx, dy), ha='center', fontsize=10)
+xs = np.linspace(0, 1.0, 100)
+ax3.plot(xs, np.polyval(coeffs, xs), '--', color='gray', alpha=0.7,
+         label=f'Weighted linear fit (slope = {slope:.0f} ± {dslope:.0f} J)')
+ax3.set_xlabel(r"Emissivity $\varepsilon$")
+ax3.set_ylabel(r"Radiated energy over 75→58 °C window  $E_\mathrm{rad}$  (J)")
+ax3.set_title("Total radiated energy vs emissivity")
+ax3.set_xlim(-0.05, 1.05); ax3.grid(alpha=0.3); ax3.legend()
+plt.tight_layout()
+plt.show()
