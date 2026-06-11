@@ -186,7 +186,7 @@ def goodness_of_fit(time, temp, popt):
     r_squared = 1 - (ss_res / ss_tot)
     chi2 = np.sum(residual_norm ** 2)
     #chi2      = np.sum((residuals / probe_error) ** 2)
-    dof       = len(temp) - len(popt)
+    dof       = len(linear_temp) - len(popt)
     chi2_red  = chi2 / dof
     return {'R2': r_squared, 'chi2': chi2, 'chi2_red': chi2_red, 'dof': dof, 'R_n': residual_norm}
 
@@ -194,7 +194,7 @@ def fit_single_run(time, temp):
     linear_temp = np.log(temp)
     try:
         popt, pcov = curve_fit(linear_model, time, linear_temp,
-                            p0=(-0.001, np.log(70)), maxfev=10000, sigma = 0.5/np.absolute(temp - T_AMBIENT), absolute_sigma=True)
+                            p0=(-0.0001, np.log(70)), maxfev=1000, sigma = 0.5/np.absolute(temp - T_AMBIENT), absolute_sigma=True)
         perr = np.sqrt(np.diag(pcov)) # Standard deviation error in parameters
         return popt, perr 
     except RuntimeError:
@@ -205,13 +205,13 @@ def fit_per_run_pairs(times, temps, label):
     results_errors = []
     for i, (t, temp) in enumerate(zip(times, temps), 1):
         t_c, temp_c = clean(np.asarray(t), np.asarray(temp))
-        popt, perr = fit_single_run(t_c, temp_c)
+        popt, perr = fit_single_run(t_c[::1000], temp_c[::1000])
         if popt is not None:
             gof = goodness_of_fit(t_c, temp_c, popt)
             results.append(popt)
             results_errors.append(perr)
-            print(f"  Run {i}: a = {popt[0]:.5f} +/- {perr[0]:.4g},  b = {popt[1]:.5f} +/- {perr[1]:.4g} | "
-                  f"R² = {gof['R2']:.4f},  χ²_red = {gof['chi2_red']:.4f}  (dof = {gof['dof']})")
+            print(f"  Run {i}: a = {popt[0]:.6f} +/- {perr[0]:.6f},  b = {popt[1]:.6f} +/- {perr[1]:.6f} | "
+                  f"R² = {gof['R2']:.4f},  χ²_red = {gof['chi2_red']:.4f}  (dof = {gof['dof']}, separation = 1000)")
         else:
             print(f"  Run {i}: fit failed")
     if not results:
@@ -221,7 +221,7 @@ def fit_per_run_pairs(times, temps, label):
     mean_results = results.mean(axis=0)
     results_errors = np.array(results_errors)
     mean_results_errors = results_errors.mean(axis=0)
-    print(f"{label} summary — a = {mean_results[0]:.4f} ± {mean_results_errors[0]:.2g},  b = {mean_results[1]:.4f} ± {mean_results_errors[1]:.2g}\n")
+    print(f"{label} summary — a = {mean_results[0]:.2e} ± {mean_results_errors[0]:.2g},  b = {mean_results[1]:.5f} ± {mean_results_errors[1]:.2g}\n")
     return mean_results, mean_results_errors
 
 print("Linear fit  T(t) = a·t + b,  per-run results:\n")
@@ -241,180 +241,180 @@ datasets = [
 print("Global goodness-of-fit  —  mean fit vs. full concatenated dataset:\n")
 for t, temp, popt, perr, emissivity, label in datasets:
     gof = goodness_of_fit(t, temp, popt)
-    print(f"  {label:9s}: k = {popt[0]:.5f} ± {perr[0]:.3g} s⁻¹ | "
-          f"R² = {gof['R2']:.4f},  χ²_red = {gof['chi2_red']:.4f}  (dof = {gof['dof']})")
+    print(f"  {label:9s}: k = {popt[0]:.5f} ± {perr[0]:.6f} s⁻¹ | "
+          f"R² = {gof['R2']:.4f},  χ²_red = {gof['chi2_red']:.4f}  (dof = {gof['dof']}) (len = {len(temp)})")
 print()
 
-# ── PLOT 1 — cooling curves + Newton fits ────────────────────────────────────
+# # ── PLOT 1 — cooling curves + Newton fits ────────────────────────────────────
 
-styles = {
-    'Aluminium': ('#7EB8E8', '#1A5F99'),
-    'Tape':      ('#FFBA7A', '#C85A00'),
-    'Glass':     ('#7DD17D', '#1E6E1E'),
-    'Copper':    ('#F490ED', '#6D138B'),
-}
+# styles = {
+#     'Aluminium': ('#7EB8E8', '#1A5F99'),
+#     'Tape':      ('#FFBA7A', '#C85A00'),
+#     'Glass':     ('#7DD17D', '#1E6E1E'),
+#     'Copper':    ('#F490ED', '#6D138B'),
+# }
 
-fig, axes = plt.subplots(2, 2, figsize=(10, 8), sharey=True)
-fig.suptitle("Cooling curves with Newton-law fits", fontsize=13)
-for ax, (t, temp, popt, perr, emissivity, label) in zip(axes.flatten(), datasets):
-    scatter_c, fit_c = styles[label]
-    ax.scatter(t[::20], np.log(temp[::20]), s=1, alpha=0.35, color=scatter_c, label='Data')
-    x_model = np.linspace(t.min(), t.max(), 500)
-    y_model = linear_model(x_model, *popt)
-    ax.plot(x_model, y_model, color=fit_c, linewidth=2,
-            label=f'Fit  (k = {popt[0]:.5f} ± {perr[0]:.5f} s⁻¹)')
-    #ax.axhline(np.log(T_AMBIENT), color='gray', ls=':', lw=1)
-    ax.set_title(label)
-    ax.set_xlabel("Time (s)")
-    ax.legend(markerscale=6, fontsize=8)
-axes[0, 0].set_ylabel("Log Temperature ln(°C)")
-axes[1, 0].set_ylabel("Log Temperature ln(°C)")
-plt.tight_layout()
-plt.show()
+# fig, axes = plt.subplots(2, 2, figsize=(10, 8), sharey=True)
+# fig.suptitle("Cooling curves with Newton-law fits", fontsize=13)
+# for ax, (t, temp, popt, perr, emissivity, label) in zip(axes.flatten(), datasets):
+#     scatter_c, fit_c = styles[label]
+#     ax.scatter(t[::1000], np.log(temp[::1000]), s=1, alpha=0.35, color=scatter_c, label='Data')
+#     x_model = np.linspace(t.min(), t.max(), 500)
+#     y_model = linear_model(x_model, *popt)
+#     ax.plot(x_model, y_model, color=fit_c, linewidth=2,
+#             label=f'Fit  (k = {popt[0]:.5f} ± {perr[0]:.5f} s⁻¹)')
+#     #ax.axhline(np.log(T_AMBIENT), color='gray', ls=':', lw=1)
+#     ax.set_title(label)
+#     ax.set_xlabel("Time (s)")
+#     ax.legend(markerscale=6, fontsize=8)
+# axes[0, 0].set_ylabel("Log Temperature ln(°C)")
+# axes[1, 0].set_ylabel("Log Temperature ln(°C)")
+# plt.tight_layout()
+# plt.show()
 
-# ── PLOT 1.2 — comparison of empiracal CDF to normalized Gaussian CDF ────────
+# # ── PLOT 1.2 — comparison of empiracal CDF to normalized Gaussian CDF ────────
 
-def residuals(t, temp, pcov):
-    df = pd.DataFrame({'t': t, 'temp': temp})
-    result = df.groupby('t', as_index=False)['temp'].mean()
-    unique_t = result['t'].to_numpy()
-    avg_temp = result['temp'].to_numpy()
-    gof = goodness_of_fit(unique_t, avg_temp, pcov)
-    R_sorted = np.sort(gof['R_n'])
-    N = len(R_sorted)
-    ecdf = np.arange(1, N+1) / N
-    return R_sorted, ecdf
+# def residuals(t, temp, pcov):
+#     df = pd.DataFrame({'t': t, 'temp': temp})
+#     result = df.groupby('t', as_index=False)['temp'].mean()
+#     unique_t = result['t'].to_numpy()
+#     avg_temp = result['temp'].to_numpy()
+#     gof = goodness_of_fit(unique_t, avg_temp, pcov)
+#     R_sorted = np.sort(gof['R_n'])
+#     N = len(R_sorted)
+#     ecdf = np.arange(1, N+1) / N
+#     return R_sorted, ecdf
 
-plt.figure(figsize=(6,5))
-colors = {'Aluminium': 'r','Tape': 'g','Glass': 'b','Copper': 'y'}
-for t, temp, popt, perr, emissivity, labels in datasets:
-    R_n, e_cdf = residuals(t, temp, popt)
-    plt.step(R_n, e_cdf, where='post', label='Empirical CDF', color=colors[labels])
+# plt.figure(figsize=(6,5))
+# colors = {'Aluminium': 'r','Tape': 'g','Glass': 'b','Copper': 'y'}
+# for t, temp, popt, perr, emissivity, labels in datasets:
+#     R_n, e_cdf = residuals(t, temp, popt)
+#     plt.step(R_n, e_cdf, where='post', label='Empirical CDF', color=colors[labels])
 
-plt.show()
+# plt.show()
 
-# ── PLOT 2 — f_rad = P_rad / P_total vs time ─────────────────────────────────
+# # ── PLOT 2 — f_rad = P_rad / P_total vs time ─────────────────────────────────
 
-BIN_DT = 60.0   # s — bin width for averaging before numerical differentiation
+# BIN_DT = 60.0   # s — bin width for averaging before numerical differentiation
 
-def bin_average(t, y, dt=BIN_DT):
-    edges = np.arange(t.min(), t.max() + dt, dt)
-    idx   = np.digitize(t, edges)
-    tb, yb, ysem = [], [], []
-    for k in range(1, len(edges)):
-        m = idx == k
-        if m.sum() < 10:
-            continue
-        tb.append(t[m].mean())
-        yb.append(y[m].mean())
-        ysem.append(y[m].std(ddof=1) / np.sqrt(m.sum()))
-    return np.array(tb), np.array(yb), np.array(ysem)
+# def bin_average(t, y, dt=BIN_DT):
+#     edges = np.arange(t.min(), t.max() + dt, dt)
+#     idx   = np.digitize(t, edges)
+#     tb, yb, ysem = [], [], []
+#     for k in range(1, len(edges)):
+#         m = idx == k
+#         if m.sum() < 10:
+#             continue
+#         tb.append(t[m].mean())
+#         yb.append(y[m].mean())
+#         ysem.append(y[m].std(ddof=1) / np.sqrt(m.sum()))
+#     return np.array(tb), np.array(yb), np.array(ysem)
 
-def frad_from_data(t_run, T_run, eps, deps):
-    t, T, T_sem = bin_average(*clean(t_run, T_run))
-    dTdt  = np.gradient(T, t)
-    T_K   = T + 273.15
-    P_rad = eps * sigma * AREA * (T_K**4 - T_AMB_K**4)
-    P_tot = -M_WATER * C_WATER * dTdt
-    dPrad_rel = np.sqrt((deps/eps)**2 + DAREA_REL**2 +
-                        (4*T_K**3 * SIGMA_T_SYS / (T_K**4 - T_AMB_K**4))**2)
-    sdTdt     = np.sqrt(2) * T_sem / (2 * BIN_DT)
-    dPtot_rel = np.sqrt((DM_WATER/M_WATER)**2 + (DC_WATER/C_WATER)**2 +
-                        (sdTdt / np.abs(dTdt))**2)
-    mask  = P_tot > 1.0
-    f     = P_rad[mask] / P_tot[mask]
-    f_err = f * np.sqrt(dPrad_rel[mask]**2 + dPtot_rel[mask]**2)
-    return t[mask], f, f_err
+# def frad_from_data(t_run, T_run, eps, deps):
+#     t, T, T_sem = bin_average(*clean(t_run, T_run))
+#     dTdt  = np.gradient(T, t)
+#     T_K   = T + 273.15
+#     P_rad = eps * sigma * AREA * (T_K**4 - T_AMB_K**4)
+#     P_tot = -M_WATER * C_WATER * dTdt
+#     dPrad_rel = np.sqrt((deps/eps)**2 + DAREA_REL**2 +
+#                         (4*T_K**3 * SIGMA_T_SYS / (T_K**4 - T_AMB_K**4))**2)
+#     sdTdt     = np.sqrt(2) * T_sem / (2 * BIN_DT)
+#     dPtot_rel = np.sqrt((DM_WATER/M_WATER)**2 + (DC_WATER/C_WATER)**2 +
+#                         (sdTdt / np.abs(dTdt))**2)
+#     mask  = P_tot > 1.0
+#     f     = P_rad[mask] / P_tot[mask]
+#     f_err = f * np.sqrt(dPrad_rel[mask]**2 + dPtot_rel[mask]**2)
+#     return t[mask], f, f_err
 
-# reference run per material (returned separately by stitch_times)
-plot2_data = [
-    (ref_time_Al,     ref_aluminium, 'Aluminium'),
-    (ref_time_tape,   ref_tape,      'Tape'),
-    (ref_time_glass,  ref_glass,     'Glass'),
-    (ref_time_copper, ref_copper,    'Copper'),
-]
+# # reference run per material (returned separately by stitch_times)
+# plot2_data = [
+#     (ref_time_Al,     ref_aluminium, 'Aluminium'),
+#     (ref_time_tape,   ref_tape,      'Tape'),
+#     (ref_time_glass,  ref_glass,     'Glass'),
+#     (ref_time_copper, ref_copper,    'Copper'),
+# ]
 
-fig2, ax2 = plt.subplots(figsize=(9, 6))
-for t_ref, T_ref, label in plot2_data:
-    eps, deps = EMISSIVITY[label]
-    tf, f, f_err = frad_from_data(t_ref, T_ref, eps, deps)
-    _, fc = styles[label]
-    ax2.plot(tf, f, color=fc, lw=1.8,
-             label=f"{label} (ε = {eps:.2f}, f̄ = {f.mean():.2f})")
-    ax2.fill_between(tf, f - f_err, f + f_err, color=fc, alpha=0.18)
-    print(f"  {label:9s}: mean f_rad = {f.mean():.3f} ± {np.mean(f_err):.3f}")
-ax2.set_xlabel("Time (s)")
-ax2.set_ylabel(r"$f_\mathrm{rad} = P_\mathrm{rad}\,/\,P_\mathrm{total}$")
-ax2.set_title("Radiative fraction of the heat loss — computed directly from T(t) data")
-ax2.set_ylim(bottom=0)
-ax2.grid(alpha=0.3)
-ax2.legend(fontsize=9)
-plt.tight_layout()
-plt.show()
+# fig2, ax2 = plt.subplots(figsize=(9, 6))
+# for t_ref, T_ref, label in plot2_data:
+#     eps, deps = EMISSIVITY[label]
+#     tf, f, f_err = frad_from_data(t_ref, T_ref, eps, deps)
+#     _, fc = styles[label]
+#     ax2.plot(tf, f, color=fc, lw=1.8,
+#              label=f"{label} (ε = {eps:.2f}, f̄ = {f.mean():.2f})")
+#     ax2.fill_between(tf, f - f_err, f + f_err, color=fc, alpha=0.18)
+#     print(f"  {label:9s}: mean f_rad = {f.mean():.3f} ± {np.mean(f_err):.3f}")
+# ax2.set_xlabel("Time (s)")
+# ax2.set_ylabel(r"$f_\mathrm{rad} = P_\mathrm{rad}\,/\,P_\mathrm{total}$")
+# ax2.set_title("Radiative fraction of the heat loss — computed directly from T(t) data")
+# ax2.set_ylim(bottom=0)
+# ax2.grid(alpha=0.3)
+# ax2.legend(fontsize=9)
+# plt.tight_layout()
+# plt.show()
 
-# ── PLOT 3 — total radiated energy vs emissivity ─────────────────────────────
+# # ── PLOT 3 — total radiated energy vs emissivity ─────────────────────────────
 
-T_HI, T_LO = 75.0, 58.0
-E_TOTAL_WINDOW = M_WATER * C_WATER * (T_HI - T_LO)
+# T_HI, T_LO = 75.0, 58.0
+# E_TOTAL_WINDOW = M_WATER * C_WATER * (T_HI - T_LO)
 
-print("\n" + "═" * 70)
-print(f"RADIATED ENERGY over the common window {T_HI:.0f} → {T_LO:.0f} °C "
-      f"(total heat lost = {E_TOTAL_WINDOW/1e3:.1f} kJ per jar)")
-print("═" * 70)
+# print("\n" + "═" * 70)
+# print(f"RADIATED ENERGY over the common window {T_HI:.0f} → {T_LO:.0f} °C "
+#       f"(total heat lost = {E_TOTAL_WINDOW/1e3:.1f} kJ per jar)")
+# print("═" * 70)
 
-# full stitched dataset per material
-plot3_data = [
-    (time_Al_c,     al_c,     'Aluminium'),
-    (time_tape_c,   tape_c,   'Tape'),
-    (time_glass_c,  glass_c,  'Glass'),
-    (time_copper_c, copper_c, 'Copper'),
-]
+# # full stitched dataset per material
+# plot3_data = [
+#     (time_Al_c,     al_c,     'Aluminium'),
+#     (time_tape_c,   tape_c,   'Tape'),
+#     (time_glass_c,  glass_c,  'Glass'),
+#     (time_copper_c, copper_c, 'Copper'),
+# ]
 
-eps_list, deps_list, E_list, dE_list, labels = [], [], [], [], []
-for t_all, y_all, label in plot3_data:
-    eps, deps = EMISSIVITY[label]
-    order = np.argsort(t_all)
-    tb, Tb, _ = bin_average(t_all[order], y_all[order], dt=30.0)
-    win = (Tb <= T_HI) & (Tb >= T_LO)
-    tw, Tw = tb[win], Tb[win]
-    T_K  = Tw + 273.15
-    Pr   = eps * sigma * AREA * (T_K**4 - T_AMB_K**4)
-    E    = np.trapezoid(Pr, tw)
-    rel  = np.sqrt((deps/eps)**2 + DAREA_REL**2 +
-                   (np.mean(4*T_K**3) * SIGMA_T_SYS /
-                    np.mean(T_K**4 - T_AMB_K**4))**2)
-    dE   = E * rel
-    eps_list.append(eps); deps_list.append(deps)
-    E_list.append(E);     dE_list.append(dE);     labels.append(label)
-    print(f"  {label:9s}: ε = {eps:.2f} ± {deps:.2f} | "
-          f"E_rad = {E:8.1f} ± {dE:6.1f} J "
-          f"({E/E_TOTAL_WINDOW*100:5.1f} % of total) | "
-          f"cooling time {tw.max()-tw.min():6.0f} s")
+# eps_list, deps_list, E_list, dE_list, labels = [], [], [], [], []
+# for t_all, y_all, label in plot3_data:
+#     eps, deps = EMISSIVITY[label]
+#     order = np.argsort(t_all)
+#     tb, Tb, _ = bin_average(t_all[order], y_all[order], dt=30.0)
+#     win = (Tb <= T_HI) & (Tb >= T_LO)
+#     tw, Tw = tb[win], Tb[win]
+#     T_K  = Tw + 273.15
+#     Pr   = eps * sigma * AREA * (T_K**4 - T_AMB_K**4)
+#     E    = np.trapezoid(Pr, tw)
+#     rel  = np.sqrt((deps/eps)**2 + DAREA_REL**2 +
+#                    (np.mean(4*T_K**3) * SIGMA_T_SYS /
+#                     np.mean(T_K**4 - T_AMB_K**4))**2)
+#     dE   = E * rel
+#     eps_list.append(eps); deps_list.append(deps)
+#     E_list.append(E);     dE_list.append(dE);     labels.append(label)
+#     print(f"  {label:9s}: ε = {eps:.2f} ± {deps:.2f} | "
+#           f"E_rad = {E:8.1f} ± {dE:6.1f} J "
+#           f"({E/E_TOTAL_WINDOW*100:5.1f} % of total) | "
+#           f"cooling time {tw.max()-tw.min():6.0f} s")
 
-eps_a, E_a, dE_a = map(np.array, (eps_list, E_list, dE_list))
+# eps_a, E_a, dE_a = map(np.array, (eps_list, E_list, dE_list))
 
-w = 1 / dE_a**2
-coeffs, cov = np.polyfit(eps_a, E_a, 1, w=np.sqrt(w), cov=True)
-slope, intercept = coeffs
-dslope = np.sqrt(cov[0, 0])
-print(f"\n  Weighted linear fit: E = ({slope:.0f} ± {dslope:.0f})·ε "
-      f"+ {intercept:.0f} J")
+# w = 1 / dE_a**2
+# coeffs, cov = np.polyfit(eps_a, E_a, 1, w=np.sqrt(w), cov=True)
+# slope, intercept = coeffs
+# dslope = np.sqrt(cov[0, 0])
+# print(f"\n  Weighted linear fit: E = ({slope:.0f} ± {dslope:.0f})·ε "
+#       f"+ {intercept:.0f} J")
 
-fig3, ax3 = plt.subplots(figsize=(8, 6))
-ax3.errorbar(eps_a, E_a, yerr=dE_a, xerr=deps_list, fmt='o', color='purple',
-             ms=8, capsize=5, label='Experimental data', zorder=3)
-for i, lab in enumerate(labels):
-    dx, dy = (0, 12)
-    if lab == 'Copper':    dx, dy = (10, -20)
-    if lab == 'Aluminium': dx, dy = (35, 8)
-    ax3.annotate(lab, (eps_a[i], E_a[i]), textcoords="offset points",
-                 xytext=(dx, dy), ha='center', fontsize=10)
-xs = np.linspace(0, 1.0, 100)
-ax3.plot(xs, np.polyval(coeffs, xs), '--', color='gray', alpha=0.7,
-         label=f'Weighted linear fit (slope = {slope:.0f} ± {dslope:.0f} J)')
-ax3.set_xlabel(r"Emissivity $\varepsilon$")
-ax3.set_ylabel(r"Radiated energy over 75→58 °C window  $E_\mathrm{rad}$  (J)")
-ax3.set_title("Total radiated energy vs emissivity")
-ax3.set_xlim(-0.05, 1.05); ax3.grid(alpha=0.3); ax3.legend()
-plt.tight_layout()
-plt.show()
+# fig3, ax3 = plt.subplots(figsize=(8, 6))
+# ax3.errorbar(eps_a, E_a, yerr=dE_a, xerr=deps_list, fmt='o', color='purple',
+#              ms=8, capsize=5, label='Experimental data', zorder=3)
+# for i, lab in enumerate(labels):
+#     dx, dy = (0, 12)
+#     if lab == 'Copper':    dx, dy = (10, -20)
+#     if lab == 'Aluminium': dx, dy = (35, 8)
+#     ax3.annotate(lab, (eps_a[i], E_a[i]), textcoords="offset points",
+#                  xytext=(dx, dy), ha='center', fontsize=10)
+# xs = np.linspace(0, 1.0, 100)
+# ax3.plot(xs, np.polyval(coeffs, xs), '--', color='gray', alpha=0.7,
+#          label=f'Weighted linear fit (slope = {slope:.0f} ± {dslope:.0f} J)')
+# ax3.set_xlabel(r"Emissivity $\varepsilon$")
+# ax3.set_ylabel(r"Radiated energy over 75→58 °C window  $E_\mathrm{rad}$  (J)")
+# ax3.set_title("Total radiated energy vs emissivity")
+# ax3.set_xlim(-0.05, 1.05); ax3.grid(alpha=0.3); ax3.legend()
+# plt.tight_layout()
+# plt.show()
