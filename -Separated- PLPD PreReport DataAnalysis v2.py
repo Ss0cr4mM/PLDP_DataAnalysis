@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from pathlib import Path
 from scipy.optimize import curve_fit
+from scipy.stats import ecdf
 
 # ── Physical constants & experimental parameters ─────────────────────────────
 
@@ -187,13 +188,13 @@ def goodness_of_fit(time, temp, popt):
     #chi2      = np.sum((residuals / probe_error) ** 2)
     dof       = len(temp) - len(popt)
     chi2_red  = chi2 / dof
-    return {'R2': r_squared, 'chi2': chi2, 'chi2_red': chi2_red, 'dof': dof}
+    return {'R2': r_squared, 'chi2': chi2, 'chi2_red': chi2_red, 'dof': dof, 'R_n': residual_norm}
 
 def fit_single_run(time, temp):
     linear_temp = np.log(temp)
     try:
         popt, pcov = curve_fit(linear_model, time, linear_temp,
-                            p0=(-0.001, np.log(70)), maxfev=10000, sigma = 0.5/np.absolute(temp - T_AMBIENT), absolute_sigma=False)
+                            p0=(-0.001, np.log(70)), maxfev=10000, sigma = 0.5/np.absolute(temp - T_AMBIENT), absolute_sigma=True)
         perr = np.sqrt(np.diag(pcov)) # Standard deviation error in parameters
         return popt, perr 
     except RuntimeError:
@@ -225,10 +226,10 @@ def fit_per_run_pairs(times, temps, label):
 
 print("Linear fit  T(t) = a·t + b,  per-run results:\n")
 
-popt_Al,     perr_Al     = fit_per_run_pairs(time_Al_stitched,     aluminium_stitched, "Aluminium")
-popt_tape,   perr_tape   = fit_per_run_pairs(time_tape_stitched,   tape_stitched,      "Tape")
-popt_glass,  perr_glass  = fit_per_run_pairs(time_glass_stitched,  glass_stitched,     "Glass")
-popt_copper, perr_copper = fit_per_run_pairs(time_copper_stitched, copper_stitched,    "Copper")
+popt_Al,     perr_Al,    = fit_per_run_pairs(time_Al_stitched,     aluminium_stitched, "Aluminium")
+popt_tape,   perr_tape,  = fit_per_run_pairs(time_tape_stitched,   tape_stitched,      "Tape")
+popt_glass,  perr_glass,  = fit_per_run_pairs(time_glass_stitched,  glass_stitched,     "Glass")
+popt_copper, perr_copper, = fit_per_run_pairs(time_copper_stitched, copper_stitched,    "Copper")
 
 datasets = [
     (time_Al_c,     al_c,     popt_Al,     perr_Al,     0.04, 'Aluminium'),
@@ -269,6 +270,27 @@ for ax, (t, temp, popt, perr, emissivity, label) in zip(axes.flatten(), datasets
 axes[0, 0].set_ylabel("Log Temperature ln(°C)")
 axes[1, 0].set_ylabel("Log Temperature ln(°C)")
 plt.tight_layout()
+plt.show()
+
+# ── PLOT 1.2 — comparison of empiracal CDF to normalized Gaussian CDF ────────
+
+def residuals(t, temp, pcov):
+    df = pd.DataFrame({'t': t, 'temp': temp})
+    result = df.groupby('t', as_index=False)['temp'].mean()
+    unique_t = result['t'].to_numpy()
+    avg_temp = result['temp'].to_numpy()
+    gof = goodness_of_fit(unique_t, avg_temp, pcov)
+    R_sorted = np.sort(gof['R_n'])
+    N = len(R_sorted)
+    ecdf = np.arange(1, N+1) / N
+    return R_sorted, ecdf
+
+plt.figure(figsize=(6,5))
+colors = {'Aluminium': 'r','Tape': 'g','Glass': 'b','Copper': 'y'}
+for t, temp, popt, perr, emissivity, labels in datasets:
+    R_n, e_cdf = residuals(t, temp, popt)
+    plt.step(R_n, e_cdf, where='post', label='Empirical CDF', color=colors[labels])
+
 plt.show()
 
 # ── PLOT 2 — f_rad = P_rad / P_total vs time ─────────────────────────────────
