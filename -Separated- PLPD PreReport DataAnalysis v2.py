@@ -272,6 +272,26 @@ axes[1, 0].set_ylabel("Log Temperature ln(°C)")
 plt.tight_layout()
 plt.show()
 
+# ── PLOT 1.2 — comparison of empiracal CDF to normalized Gaussian CDF ────────
+
+def residuals(t, temp, pcov):
+    df = pd.DataFrame({'t': t, 'temp': temp})
+    result = df.groupby('t', as_index=False)['temp'].mean()
+    unique_t = result['t'].to_numpy()
+    avg_temp = result['temp'].to_numpy()
+    gof = goodness_of_fit(unique_t, avg_temp, pcov)
+    R_sorted = np.sort(gof['R_n'])
+    N = len(R_sorted)
+    ecdf = np.arange(1, N+1) / N
+    return R_sorted, ecdf
+
+plt.figure(figsize=(6,5))
+colors = {'Aluminium': 'r','Tape': 'g','Glass': 'b','Copper': 'y'}
+for t, temp, popt, perr, emissivity, labels in datasets:
+    R_n, e_cdf = residuals(t, temp, popt)
+    plt.step(R_n, e_cdf, where='post', label='Empirical CDF', color=colors[labels])
+
+
 # ── PLOT 2 — f_rad = P_rad / P_total vs time ─────────────────────────────────
 
 BIN_DT = 60.0   # s — bin width for averaging before numerical differentiation
