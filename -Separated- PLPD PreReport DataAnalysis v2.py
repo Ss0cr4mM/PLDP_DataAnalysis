@@ -8,12 +8,12 @@ from scipy.optimize import curve_fit
 
 sigma      = 5.67e-8        # W m⁻² K⁻⁴  Stefan–Boltzmann constant
 T_AMBIENT  = 22.0           # °C   measured room temperature
+DT_AMBIENT = 0.5            # °C   uncertainty on ambient temperature
 T_AMB_K    = T_AMBIENT + 273.15
 
 M_WATER    = 0.500          # kg   (500 ml jar)
 DM_WATER   = 0.010          # kg   filling uncertainty (~10 ml)
 C_WATER    = 4186.0         # J kg⁻¹ K⁻¹
-DC_WATER   = 40.0           # J kg⁻¹ K⁻¹ (T-dependence of c over 50–80 °C)
 
 
 AREA       = 0.28*0.12
@@ -295,9 +295,10 @@ def frad_from_data(t_run, T_run, eps, deps):
     P_rad = eps * sigma * AREA * (T_K**4 - T_AMB_K**4)
     P_tot = -M_WATER * C_WATER * dTdt
     dPrad_rel = np.sqrt((deps/eps)**2 + DAREA_REL**2 +
-                        (4*T_K**3 * SIGMA_T_SYS / (T_K**4 - T_AMB_K**4))**2)
+                        (4*T_K**3 * SIGMA_T_SYS / (T_K**4 - T_AMB_K**4))**2 +
+                        (4*T_AMB_K**3 * DT_AMBIENT / (T_K**4 - T_AMB_K**4))**2)
     sdTdt     = np.sqrt(2) * T_sem / (2 * BIN_DT)
-    dPtot_rel = np.sqrt((DM_WATER/M_WATER)**2 + (DC_WATER/C_WATER)**2 +
+    dPtot_rel = np.sqrt((DM_WATER/M_WATER)**2 +
                         (sdTdt / np.abs(dTdt))**2)
     mask  = P_tot > 1.0
     f     = P_rad[mask] / P_tot[mask]
@@ -359,8 +360,8 @@ for t_all, y_all, label in plot3_data:
     Pr   = eps * sigma * AREA * (T_K**4 - T_AMB_K**4)
     E    = np.trapezoid(Pr, tw)
     rel  = np.sqrt((deps/eps)**2 + DAREA_REL**2 +
-                   (np.mean(4*T_K**3) * SIGMA_T_SYS /
-                    np.mean(T_K**4 - T_AMB_K**4))**2)
+                   (np.mean(4*T_K**3) * SIGMA_T_SYS / np.mean(T_K**4 - T_AMB_K**4))**2 +
+                   (4*T_AMB_K**3 * DT_AMBIENT / np.mean(T_K**4 - T_AMB_K**4))**2)
     dE   = E * rel
     eps_list.append(eps); deps_list.append(deps)
     E_list.append(E);     dE_list.append(dE);     labels.append(label)
