@@ -9,12 +9,12 @@ from scipy.stats import ecdf
 
 sigma      = 5.67e-8        # W m⁻² K⁻⁴  Stefan–Boltzmann constant
 T_AMBIENT  = 22.0           # °C   measured room temperature
+DT_AMBIENT = 0.5            # °C   uncertainty on ambient temperature
 T_AMB_K    = T_AMBIENT + 273.15
 
 M_WATER    = 0.500          # kg   (500 ml jar)
 DM_WATER   = 0.010          # kg   filling uncertainty (~10 ml)
 C_WATER    = 4186.0         # J kg⁻¹ K⁻¹
-DC_WATER   = 40.0           # J kg⁻¹ K⁻¹ (T-dependence of c over 50–80 °C)
 
 
 AREA       = 0.28*0.12
@@ -272,6 +272,7 @@ print()
 # plt.tight_layout()
 # plt.show()
 
+<<<<<<< HEAD
 # # ── PLOT 1.2 — comparison of empiracal CDF to normalized Gaussian CDF ────────
 
 # def residuals(t, temp, pcov):
@@ -284,6 +285,12 @@ print()
 #     N = len(R_sorted)
 #     ecdf = np.arange(1, N+1) / N
 #     return R_sorted, ecdf
+=======
+# ── PLOT 2 — f_rad vs emissivity at T = 65 °C ────────────────────────────────
+
+BIN_DT   = 60.0   # s — bin width for averaging before numerical differentiation
+T_TARGET = 65.0   # °C — fixed temperature for the emissivity comparison
+>>>>>>> ca38b99d52ef3cc63cd126da0b78f96112d9ed8c
 
 # plt.figure(figsize=(6,5))
 # colors = {'Aluminium': 'r','Tape': 'g','Glass': 'b','Copper': 'y'}
@@ -291,11 +298,78 @@ print()
 #     R_n, e_cdf = residuals(t, temp, popt)
 #     plt.step(R_n, e_cdf, where='post', label='Empirical CDF', color=colors[labels])
 
+<<<<<<< HEAD
 # plt.show()
+=======
+def frad_at_temp(t_run, T_run, eps, deps, T_target=T_TARGET):
+    """Return f_rad and its uncertainty at the bin closest to T_target (°C)."""
+    t, T, T_sem = bin_average(*clean(t_run, T_run))
+    dTdt  = np.gradient(T, t)
+    T_K   = T + 273.15
+    P_rad = eps * sigma * AREA * (T_K**4 - T_AMB_K**4)
+    P_tot = -M_WATER * C_WATER * dTdt
+    dPrad_rel = np.sqrt((deps/eps)**2 + DAREA_REL**2 +
+                        (4*T_K**3 * SIGMA_T_SYS / (T_K**4 - T_AMB_K**4))**2 +
+                        (4*T_AMB_K**3 * DT_AMBIENT / (T_K**4 - T_AMB_K**4))**2)
+    sdTdt     = np.sqrt(2) * T_sem / (2 * BIN_DT)
+    dPtot_rel = np.sqrt((DM_WATER/M_WATER)**2 +
+                        (sdTdt / np.abs(dTdt))**2)
+    mask  = P_tot > 1.0
+    T_m   = T[mask]
+    f     = P_rad[mask] / P_tot[mask]
+    f_err = f * np.sqrt(dPrad_rel[mask]**2 + dPtot_rel[mask]**2)
+    idx   = np.argmin(np.abs(T_m - T_target))
+    return f[idx], f_err[idx]
+>>>>>>> ca38b99d52ef3cc63cd126da0b78f96112d9ed8c
 
 # # ── PLOT 2 — f_rad = P_rad / P_total vs time ─────────────────────────────────
 
+<<<<<<< HEAD
 # BIN_DT = 60.0   # s — bin width for averaging before numerical differentiation
+=======
+print(f"\nf_rad at T = {T_TARGET:.0f} °C:\n")
+eps_p2, deps_p2, f_p2, ferr_p2, labels_p2 = [], [], [], [], []
+for t_ref, T_ref, label in plot2_data:
+    eps, deps = EMISSIVITY[label]
+    fv, fe = frad_at_temp(t_ref, T_ref, eps, deps)
+    eps_p2.append(eps);  deps_p2.append(deps)
+    f_p2.append(fv);     ferr_p2.append(fe)
+    labels_p2.append(label)
+    print(f"  {label:9s}: ε = {eps:.2f}, f_rad = {fv:.3f} ± {fe:.3f}")
+
+eps_p2  = np.array(eps_p2)
+f_p2    = np.array(f_p2)
+ferr_p2 = np.array(ferr_p2)
+
+w_p2 = 1 / ferr_p2**2
+coeffs_p2, cov_p2 = np.polyfit(eps_p2, f_p2, 1, w=np.sqrt(w_p2), cov=True)
+slope_p2, intercept_p2 = coeffs_p2
+dslope_p2 = np.sqrt(cov_p2[0, 0])
+dintercept_p2 = np.sqrt(cov_p2[1, 1])
+print(f"\n  Weighted linear fit: f_rad = ({slope_p2:.4f} ± {dslope_p2:.4f})·ε "
+      f"+ ({intercept_p2:.4f} ± {dintercept_p2:.4f})")
+
+fig2, ax2 = plt.subplots(figsize=(8, 6))
+for i, label in enumerate(labels_p2):
+    _, fc = styles[label]
+    ax2.errorbar(eps_p2[i], f_p2[i], yerr=ferr_p2[i], xerr=deps_p2[i],
+                 fmt='o', color=fc, ms=9, capsize=5, zorder=4,
+                 label=f"{label} (ε = {eps_p2[i]:.2f})")
+xs_p2 = np.linspace(0, 1.0, 100)
+ax2.plot(xs_p2, np.polyval(coeffs_p2, xs_p2), '--', color='gray', alpha=0.7,
+         label=f'Weighted linear fit\n'
+               rf'$f_\mathrm{{rad}}$ = ({slope_p2:.3f} ± {dslope_p2:.3f})·ε'
+               f' + ({intercept_p2:.3f} ± {dintercept_p2:.3f})')
+ax2.set_xlabel(r"Emissivity $\varepsilon$")
+ax2.set_ylabel(r"$f_\mathrm{rad} = P_\mathrm{rad}\,/\,P_\mathrm{total}$")
+ax2.set_title(rf"Radiative fraction vs emissivity at $T = {T_TARGET:.0f}\,°C$")
+ax2.set_ylim(bottom=0)
+ax2.set_xlim(-0.05, 1.05)
+ax2.grid(alpha=0.3)
+ax2.legend(fontsize=9)
+plt.tight_layout()
+plt.show()
+>>>>>>> ca38b99d52ef3cc63cd126da0b78f96112d9ed8c
 
 # def bin_average(t, y, dt=BIN_DT):
 #     edges = np.arange(t.min(), t.max() + dt, dt)
@@ -352,7 +426,30 @@ print()
 # plt.tight_layout()
 # plt.show()
 
+<<<<<<< HEAD
 # # ── PLOT 3 — total radiated energy vs emissivity ─────────────────────────────
+=======
+eps_list, deps_list, E_list, dE_list, labels = [], [], [], [], []
+for t_all, y_all, label in plot3_data:
+    eps, deps = EMISSIVITY[label]
+    order = np.argsort(t_all)
+    tb, Tb, _ = bin_average(t_all[order], y_all[order], dt=30.0)
+    win = (Tb <= T_HI) & (Tb >= T_LO)
+    tw, Tw = tb[win], Tb[win]
+    T_K  = Tw + 273.15
+    Pr   = eps * sigma * AREA * (T_K**4 - T_AMB_K**4)
+    E    = np.trapezoid(Pr, tw)
+    rel  = np.sqrt((deps/eps)**2 + DAREA_REL**2 +
+                   (np.mean(4*T_K**3) * SIGMA_T_SYS / np.mean(T_K**4 - T_AMB_K**4))**2 +
+                   (4*T_AMB_K**3 * DT_AMBIENT / np.mean(T_K**4 - T_AMB_K**4))**2)
+    dE   = E * rel
+    eps_list.append(eps); deps_list.append(deps)
+    E_list.append(E);     dE_list.append(dE);     labels.append(label)
+    print(f"  {label:9s}: ε = {eps:.2f} ± {deps:.2f} | "
+          f"E_rad = {E:8.1f} ± {dE:6.1f} J "
+          f"({E/E_TOTAL_WINDOW*100:5.1f} % of total) | "
+          f"cooling time {tw.max()-tw.min():6.0f} s")
+>>>>>>> ca38b99d52ef3cc63cd126da0b78f96112d9ed8c
 
 # T_HI, T_LO = 75.0, 58.0
 # E_TOTAL_WINDOW = M_WATER * C_WATER * (T_HI - T_LO)
