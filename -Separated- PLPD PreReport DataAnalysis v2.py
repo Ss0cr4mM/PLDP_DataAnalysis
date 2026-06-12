@@ -17,7 +17,7 @@ T_AMB_K    = T_AMBIENT + 273.15
 M_WATER    = 0.500          # kg   (500 ml jar)
 DM_WATER   = 0.010          # kg   filling uncertainty (~10 ml)
 C_WATER    = 4186.0         # J kg⁻¹ K⁻¹
-
+DC_WATER   = 0.0
 
 AREA       = 0.28*0.12
 DAREA_REL  = 0.05           # 5 % relative uncertainty on A
@@ -315,9 +315,10 @@ plt.legend()
 plt.show()
 
 
-# ── PLOT 2 — f_rad = P_rad / P_total vs time ─────────────────────────────────
+# ── PLOT 2 — f_rad vs emissivity at T = 65 °C ────────────────────────────────
 
-BIN_DT = 60.0   # s — bin width for averaging before numerical differentiation
+BIN_DT   = 60.0   # s — bin width for averaging before numerical differentiation
+T_TARGET = 65.0   # °C — fixed temperature for the emissivity comparison
 
 def bin_average(t, y, dt=BIN_DT):
     edges = np.arange(t.min(), t.max() + dt, dt)
@@ -332,21 +333,25 @@ def bin_average(t, y, dt=BIN_DT):
         ysem.append(y[m].std(ddof=1) / np.sqrt(m.sum()))
     return np.array(tb), np.array(yb), np.array(ysem)
 
-def frad_from_data(t_run, T_run, eps, deps):
+def frad_at_temp(t_run, T_run, eps, deps, T_target=T_TARGET):
+    """Return f_rad and its uncertainty at the bin closest to T_target (°C)."""
     t, T, T_sem = bin_average(*clean(t_run, T_run))
     dTdt  = np.gradient(T, t)
     T_K   = T + 273.15
     P_rad = eps * sigma * AREA * (T_K**4 - T_AMB_K**4)
     P_tot = -M_WATER * C_WATER * dTdt
     dPrad_rel = np.sqrt((deps/eps)**2 + DAREA_REL**2 +
-                        (4*T_K**3 * SIGMA_T_SYS / (T_K**4 - T_AMB_K**4))**2)
+                        (4*T_K**3 * SIGMA_T_SYS / (T_K**4 - T_AMB_K**4))**2 +
+                        (4*T_AMB_K**3 * DT_AMBIENT / (T_K**4 - T_AMB_K**4))**2)
     sdTdt     = np.sqrt(2) * T_sem / (2 * BIN_DT)
-    dPtot_rel = np.sqrt((DM_WATER/M_WATER)**2 + (DC_WATER/C_WATER)**2 +
+    dPtot_rel = np.sqrt((DM_WATER/M_WATER)**2 +
                         (sdTdt / np.abs(dTdt))**2)
     mask  = P_tot > 1.0
+    T_m   = T[mask]
     f     = P_rad[mask] / P_tot[mask]
     f_err = f * np.sqrt(dPrad_rel[mask]**2 + dPtot_rel[mask]**2)
-    return t[mask], f, f_err
+    idx   = np.argmin(np.abs(T_m - T_target))
+    return f[idx], f_err[idx]
 
 # reference run per material (returned separately by stitch_times)
 plot2_data = [
@@ -356,19 +361,44 @@ plot2_data = [
     (ref_time_copper, ref_copper,    'Copper'),
 ]
 
-fig2, ax2 = plt.subplots(figsize=(9, 6))
+print(f"\nf_rad at T = {T_TARGET:.0f} °C:\n")
+eps_p2, deps_p2, f_p2, ferr_p2, labels_p2 = [], [], [], [], []
 for t_ref, T_ref, label in plot2_data:
     eps, deps = EMISSIVITY[label]
-    tf, f, f_err = frad_from_data(t_ref, T_ref, eps, deps)
+    fv, fe = frad_at_temp(t_ref, T_ref, eps, deps)
+    eps_p2.append(eps);  deps_p2.append(deps)
+    f_p2.append(fv);     ferr_p2.append(fe)
+    labels_p2.append(label)
+    print(f"  {label:9s}: ε = {eps:.2f}, f_rad = {fv:.3f} ± {fe:.3f}")
+
+eps_p2  = np.array(eps_p2)
+f_p2    = np.array(f_p2)
+ferr_p2 = np.array(ferr_p2)
+
+w_p2 = 1 / ferr_p2**2
+coeffs_p2, cov_p2 = np.polyfit(eps_p2, f_p2, 1, w=np.sqrt(w_p2), cov=True)
+slope_p2, intercept_p2 = coeffs_p2
+dslope_p2 = np.sqrt(cov_p2[0, 0])
+dintercept_p2 = np.sqrt(cov_p2[1, 1])
+print(f"\n  Weighted linear fit: f_rad = ({slope_p2:.4f} ± {dslope_p2:.4f})·ε "
+      f"+ ({intercept_p2:.4f} ± {dintercept_p2:.4f})")
+
+fig2, ax2 = plt.subplots(figsize=(8, 6))
+for i, label in enumerate(labels_p2):
     _, fc = styles[label]
-    ax2.plot(tf, f, color=fc, lw=1.8,
-             label=f"{label} (ε = {eps:.2f}, f̄ = {f.mean():.2f})")
-    ax2.fill_between(tf, f - f_err, f + f_err, color=fc, alpha=0.18)
-    print(f"  {label:9s}: mean f_rad = {f.mean():.3f} ± {np.mean(f_err):.3f}")
-ax2.set_xlabel("Time (s)")
+    ax2.errorbar(eps_p2[i], f_p2[i], yerr=ferr_p2[i], xerr=deps_p2[i],
+                 fmt='o', color=fc, ms=9, capsize=5, zorder=4,
+                 label=f"{label} (ε = {eps_p2[i]:.2f})")
+xs_p2 = np.linspace(0, 1.0, 100)
+ax2.plot(xs_p2, np.polyval(coeffs_p2, xs_p2), '--', color='gray', alpha=0.7,
+         label=f'Weighted linear fit\n'
+               rf'$f_\mathrm{{rad}}$ = ({slope_p2:.3f} ± {dslope_p2:.3f})·ε'
+               f' + ({intercept_p2:.3f} ± {dintercept_p2:.3f})')
+ax2.set_xlabel(r"Emissivity $\varepsilon$")
 ax2.set_ylabel(r"$f_\mathrm{rad} = P_\mathrm{rad}\,/\,P_\mathrm{total}$")
-ax2.set_title("Radiative fraction of the heat loss — computed directly from T(t) data")
+ax2.set_title(rf"Radiative fraction vs emissivity at $T = {T_TARGET:.0f}\,°C$")
 ax2.set_ylim(bottom=0)
+ax2.set_xlim(-0.05, 1.05)
 ax2.grid(alpha=0.3)
 ax2.legend(fontsize=9)
 plt.tight_layout()
@@ -403,8 +433,8 @@ for t_all, y_all, label in plot3_data:
     Pr   = eps * sigma * AREA * (T_K**4 - T_AMB_K**4)
     E    = np.trapezoid(Pr, tw)
     rel  = np.sqrt((deps/eps)**2 + DAREA_REL**2 +
-                   (np.mean(4*T_K**3) * SIGMA_T_SYS /
-                    np.mean(T_K**4 - T_AMB_K**4))**2)
+                   (np.mean(4*T_K**3) * SIGMA_T_SYS / np.mean(T_K**4 - T_AMB_K**4))**2 +
+                   (4*T_AMB_K**3 * DT_AMBIENT / np.mean(T_K**4 - T_AMB_K**4))**2)
     dE   = E * rel
     eps_list.append(eps); deps_list.append(deps)
     E_list.append(E);     dE_list.append(dE);     labels.append(label)
@@ -438,5 +468,198 @@ ax3.set_xlabel(r"Emissivity $\varepsilon$")
 ax3.set_ylabel(r"Radiated energy over 75→58 °C window  $E_\mathrm{rad}$  (J)")
 ax3.set_title("Total radiated energy vs emissivity")
 ax3.set_xlim(-0.05, 1.05); ax3.grid(alpha=0.3); ax3.legend()
+plt.tight_layout()
+plt.show()
+
+
+class IRDataAnalyzer:
+    def __init__(self, t_ambient=22.0, area=(0.28*0.12)):
+        """
+        Initialize parameters using physical constants and experiment variables.
+        """
+        self.sigma = 5.67e-8  # Stefan-Boltzmann constant (W m^-2 K^-4)
+        self.t_ambient_k = t_ambient + 273.15
+        self.area = area
+        
+    
+        self.emissivities = {
+            'BLACK TAPE': 0.95,
+            'TAPE': 0.95,
+            'COPPER': 0.02,
+            'ALUMINIUM': 0.04,
+            'GLASS': 0.90
+        }
+        
+    def load_and_process_csv(self, filepath):
+        """
+        Reads the IR camera CSV file, extracts time/temp for each material,
+        and calculates the radiative power.
+        """
+        try:
+            df = pd.read_csv(filepath)
+        except FileNotFoundError:
+            print(f"Error: Could not find the file '{filepath}'. Check the path.")
+            return {}
+
+        datasets = {}
+        
+     
+        for i in range(0, len(df.columns), 3):
+            if i + 2 >= len(df.columns):
+                break
+                
+            material_col = df.columns[i]
+            time_col = df.columns[i+1]
+            temp_col = df.columns[i+2]
+            
+            first_val = df.iloc[0, i]
+            if pd.isna(first_val):
+                continue
+                
+            material_name = str(first_val).strip().upper()
+            
+           
+            temp_data = df[[time_col, temp_col]].dropna().copy()
+            temp_data.columns = ['Time', 'Temperature']
+            
+            if temp_data.empty:
+                continue
+            
+            try:
+                temp_data['Time'] = temp_data['Time'].astype(str)
+               
+                parsed_time = pd.to_datetime(temp_data['Time'], errors='coerce')
+                
+                
+                if parsed_time.isna().all():
+                    parsed_time = pd.to_timedelta(temp_data['Time'])
+                    temp_data['Time_sec'] = parsed_time.dt.total_seconds()
+                else:
+                    temp_data['Time_sec'] = (parsed_time - parsed_time.iloc[0]).dt.total_seconds()
+                
+                temp_data['Time_sec'] = temp_data['Time_sec'] - temp_data['Time_sec'].iloc[0]
+
+               
+                temp_data['Temperature'] = temp_data['Temperature'].astype(str).str.replace(',', '.')
+                temp_data['Temperature'] = temp_data['Temperature'].str.extract(r'([-+]?\d*\.?\d+)')[0]
+                temp_data['Temperature'] = pd.to_numeric(temp_data['Temperature'], errors='coerce')
+                
+               
+                temp_data = temp_data.dropna(subset=['Temperature'])
+
+               
+                eps = self.emissivities.get(material_name, 1.0) # Default to 1.0 if not in dict
+                t_k = temp_data['Temperature'] + 273.15
+                
+                temp_data['Radiative_Power'] = eps * self.sigma * self.area * (t_k**4 - self.t_ambient_k**4)
+                
+                datasets[material_name] = temp_data
+                print(f"Successfully processed {material_name}: {len(temp_data)} data points.")
+                
+            except Exception as e:
+                print(f"Error parsing data for {material_name}: {e}")
+                continue
+                
+        return datasets
+
+    def plot_radiative_power(self, datasets, output_filename="radiative_power_plot.png"):
+        """
+        Generates and saves a time vs. radiative power plot for all processed datasets.
+        """
+        if not datasets:
+            print("No data to plot! Check your CSV format.")
+            return
+
+        plt.figure(figsize=(10, 6))
+        
+        for material, data in datasets.items():
+            eps = self.emissivities.get(material, 1.0)
+            plt.plot(data['Time_sec'], data['Radiative_Power'], marker='o', markersize=3, linestyle='-', 
+                     label=f"{material} (ε={eps})")
+            
+        plt.xlabel("Time (s)", fontsize=12)
+        plt.ylabel("Net Radiative Power (W)", fontsize=12)
+        plt.title("IR Camera: Net Radiative Power vs Time", fontsize=14)
+        plt.legend()
+        plt.grid(True, linestyle='--', alpha=0.7)
+        plt.tight_layout()
+        
+  
+        plt.show()
+
+if __name__ == "__main__":
+
+    analyzer = IRDataAnalyzer(t_ambient=22.0)
+   
+    csv_file_path = "IR CAMERA READING.csv"  
+    datasets = analyzer.load_and_process_csv(csv_file_path)
+    
+ 
+    analyzer.plot_radiative_power(datasets, output_filename="radiative_power_plot.png")
+
+BIN_DT = 60.0   # s — bin width for smoothing the curves
+
+def bin_average(t, y, dt=BIN_DT):
+    """Smoothes the data to make the plots cleaner."""
+    edges = np.arange(t.min(), t.max() + dt, dt)
+    idx   = np.digitize(t, edges)
+    tb, yb = [], []
+    for k in range(1, len(edges)):
+        m = idx == k
+        if m.sum() < 10:
+            continue
+        tb.append(t[m].mean())
+        yb.append(y[m].mean())
+    return np.array(tb), np.array(yb)
+
+def prad_vs_time(t_run, T_run, eps, deps):
+    """Calculates P_rad and its absolute uncertainty over the whole time series."""
+    # Bin the data to smooth out sensor noise
+    t, T = bin_average(*clean(t_run, T_run))
+    T_K  = T + 273.15
+    
+    # Calculate Radiative Power (W)
+    P_rad = eps * sigma * AREA * (T_K**4 - T_AMB_K**4)
+    
+    # Calculate relative and absolute error for the shaded bands
+    dPrad_rel = np.sqrt((deps/eps)**2 + DAREA_REL**2 +
+                        (4*T_K**3 * SIGMA_T_SYS / (T_K**4 - T_AMB_K**4))**2 +
+                        (4*T_AMB_K**3 * DT_AMBIENT / (T_K**4 - T_AMB_K**4))**2)
+    P_rad_err = P_rad * dPrad_rel
+    
+    return t, P_rad, P_rad_err
+
+# reference run per material (returned separately by stitch_times in your script)
+plot_data = [
+    (ref_time_Al,     ref_aluminium, 'Aluminium'),
+    (ref_time_tape,   ref_tape,      'Tape'),
+    (ref_time_glass,  ref_glass,     'Glass'),
+    (ref_time_copper, ref_copper,    'Copper'),
+]
+
+# Set up the plot
+fig, ax = plt.subplots(figsize=(9, 6))
+
+for t_ref, T_ref, label in plot_data:
+    eps, deps = EMISSIVITY[label]
+    
+    # Get the time series data for P_rad
+    t_vals, Prad_vals, Prad_err = prad_vs_time(t_ref, T_ref, eps, deps)
+    
+    # Grab your standard colors from your styles dictionary
+    _, fc = styles[label]
+    
+    # Plot the main curve
+    ax.plot(t_vals, Prad_vals, lw=2, color=fc, label=f"{label} (ε = {eps:.2f})")
+    
+    # Add shaded error bands around the curve
+    ax.fill_between(t_vals, Prad_vals - Prad_err, Prad_vals + Prad_err, color=fc, alpha=0.2)
+
+ax.set_xlabel("Time (s)", fontsize=11)
+ax.set_ylabel(r"Radiative Power $P_\mathrm{rad}$ (W)", fontsize=11)
+ax.set_title("Radiative Power vs Time", fontsize=13)
+ax.set_ylim(bottom=0)
+ax.grid(alpha=0.3)
+ax.legend(fontsize=10)
 plt.tight_layout()
 plt.show()
