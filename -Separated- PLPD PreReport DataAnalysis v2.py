@@ -237,7 +237,7 @@ def fit_per_run_pairs(times, temps, label):
     results_errors = np.array(results_errors)
     mean_results_errors = results_errors.mean(axis=0)
 
-    residuals = np.concatenate(residuals_list)
+    residuals = np.sort(np.concatenate(residuals_list))
     D, p_value = kstest(residuals, 'norm')
     print(f"{label} summary — a = {mean_results[0]:.2e} ± {mean_results_errors[0]:.2g},  b = {mean_results[1]:.5f} ± {mean_results_errors[1]:.2g}\n")
     return mean_results, mean_results_errors, D
