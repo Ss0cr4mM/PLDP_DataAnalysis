@@ -6,6 +6,7 @@ from scipy.optimize import curve_fit
 from scipy.stats import ecdf
 from scipy.stats import norm
 from scipy.stats import kstest
+from smooth_average_curve import smooth_average_curve
 
 # ── Physical constants & experimental parameters ─────────────────────────────
 
@@ -158,6 +159,13 @@ copper_stitched.append(ref_copper)
 time_copper = np.concatenate(time_copper_stitched)
 copper      = np.concatenate(copper_stitched)
 
+non_conc_dataset = [
+    (aluminium_stitched, time_Al_stitched),
+    (tape_stitched, time_tape_stitched),
+    (glass_stitched, time_glass_stitched),
+    (copper_stitched, time_copper_stitched)
+]
+
 # ── Clean (remove NaN / Inf) ─────────────────────────────────────────────────
 
 def clean(time_arr, temp_arr):
@@ -178,16 +186,16 @@ def linear_model(x, a, b):
 def error_sigma(temp):
     return 0.5/np.absolute(temp - T_AMBIENT)
 
-def residuals(t, temp, popt):
-    df = pd.DataFrame({'t': t, 'temp': temp})
-    result = df.groupby('t', as_index=False)['temp'].mean()
-    unique_t = result['t'].to_numpy()
-    avg_temp = result['temp'].to_numpy()
-    gof = goodness_of_fit(unique_t, avg_temp, popt)
-    R_sorted = np.sort(gof['R_n'])
+def calc_residuals(t, temp, popt):
+    linear_temp = np.log(temp)
+    y_pred    = linear_model(t, *popt)
+    residuals = linear_temp - y_pred
+    R_standard = (residuals - np.mean(residuals)) / np.std(residuals, ddof=1)
+    R_sorted = np.sort(R_standard)
     N = len(R_sorted)
     ecdf = np.arange(1, N+1) / N
-    return unique_t, R_sorted, ecdf
+    D, p_value = kstest(R_standard, 'norm')
+    return {'Residuals' : R_standard, 'Org_Res' : R_sorted, 'ECDF' : ecdf, 'D' : D, 'p-value' : p_value}
 
 def goodness_of_fit(time, temp, popt):
     linear_temp = np.log(temp)
@@ -216,7 +224,6 @@ def fit_single_run(time, temp):
 def fit_per_run_pairs(times, temps, label):
     results = []
     results_errors = []
-    residuals_list = []
     for i, (t, temp) in enumerate(zip(times, temps), 1):
         t_c, temp_c = clean(np.asarray(t), np.asarray(temp))
         popt, perr = fit_single_run(t_c[::1000], temp_c[::1000])
@@ -224,7 +231,6 @@ def fit_per_run_pairs(times, temps, label):
             gof = goodness_of_fit(t_c, temp_c, popt)
             results.append(popt)
             results_errors.append(perr)
-            residuals_list.append(np.asarray(gof['R_n']))
             print(f"  Run {i}: a = {popt[0]:.6f} +/- {perr[0]:.6f},  b = {popt[1]:.6f} +/- {perr[1]:.6f} | "
                   f"R² = {gof['R2']:.4f},  χ²_red = {gof['chi2_red']:.4f}  (dof = {gof['dof']}, separation = 1000)")
         else:
@@ -237,31 +243,39 @@ def fit_per_run_pairs(times, temps, label):
     results_errors = np.array(results_errors)
     mean_results_errors = results_errors.mean(axis=0)
 
-    residuals = np.sort(np.concatenate(residuals_list))
-    D, p_value = kstest(residuals, 'norm')
     print(f"{label} summary — a = {mean_results[0]:.2e} ± {mean_results_errors[0]:.2g},  b = {mean_results[1]:.5f} ± {mean_results_errors[1]:.2g}\n")
-    return mean_results, mean_results_errors, D
+    return mean_results, mean_results_errors
 
 print("Linear fit  T(t) = a·t + b,  per-run results:\n")
 
-popt_Al,     perr_Al, D_Al    = fit_per_run_pairs(time_Al_stitched,     aluminium_stitched, "Aluminium")
-popt_tape,   perr_tape, D_tape = fit_per_run_pairs(time_tape_stitched,   tape_stitched,      "Tape")
-popt_glass,  perr_glass, D_glass = fit_per_run_pairs(time_glass_stitched,  glass_stitched,     "Glass")
-popt_copper, perr_copper, D_copper = fit_per_run_pairs(time_copper_stitched, copper_stitched,    "Copper")
+popt_Al,     perr_Al = fit_per_run_pairs(time_Al_stitched,     aluminium_stitched, "Aluminium")
+popt_tape,   perr_tape = fit_per_run_pairs(time_tape_stitched,   tape_stitched,      "Tape")
+popt_glass,  perr_glass = fit_per_run_pairs(time_glass_stitched,  glass_stitched,     "Glass")
+popt_copper, perr_copper = fit_per_run_pairs(time_copper_stitched, copper_stitched,    "Copper")
 
 datasets = [
-    (time_Al_c,     al_c,     popt_Al,     perr_Al,       D_Al,     0.04, 'Aluminium'),
-    (time_tape_c,   tape_c,   popt_tape,   perr_tape,     D_tape,   0.95, 'Tape'),
-    (time_glass_c,  glass_c,  popt_glass,  perr_glass,    D_glass,  0.90, 'Glass'),
-    (time_copper_c, copper_c, popt_copper, perr_copper,   D_copper, 0.02, 'Copper'),
+    (time_Al_c,     al_c,   time_Al_stitched,       aluminium_stitched,     popt_Al,     perr_Al,    0.04, 'Aluminium'),
+    (time_tape_c,   tape_c, time_tape_stitched,     tape_stitched,      popt_tape,   perr_tape,  0.95, 'Tape'),
+    (time_glass_c,  glass_c, time_glass_stitched,   glass_stitched,   popt_glass,  perr_glass, 0.90, 'Glass'),
+    (time_copper_c, copper_c, time_copper_stitched, copper_stitched, popt_copper, perr_copper, 0.02, 'Copper'),
 ]
 
 print("Global goodness-of-fit  —  mean fit vs. full concatenated dataset:\n")
-for t, temp, popt, perr, D, emissivity, label in datasets:
+for t, temp, t_s, temp_s, popt, perr, emissivity, label in datasets:
     gof = goodness_of_fit(t, temp, popt)
+    unique_t, smooth_temp = smooth_average_curve(t_s, temp_s)
+    differences = []
+    pvals = []
+    for i in range(len(t_s)):
+        differences.append(calc_residuals(t_s[i][::1000], temp_s[i][::1000], popt)['D'])
+        pvals.append(calc_residuals(t_s[i][::1000], temp_s[i][::1000], popt)['p-value'])
+    diff = np.mean(np.asarray(differences)[~np.isnan(differences)])
+    diff_std = np.std(np.asarray(differences)[~np.isnan(differences)])
+    pval = np.mean(np.asarray(pvals)[~np.isnan(pvals)])
+    pval_std = np.std(np.asarray(pvals)[~np.isnan(pvals)])
     print(f"  {label:9s}: k = {popt[0]:.5f} ± {perr[0]:.6f} s⁻¹ | "
-          f"R² = {gof['R2']:.4f},  χ²_red = {gof['chi2_red']:.4f}  (dof = {gof['dof']}) "
-          f"D = {D:.4f}")
+        f"R² = {gof['R2']:.4f},  χ²_red = {gof['chi2_red']:.4f}  (dof = {gof['dof']}) "
+        f"D = {diff:4f} +/- {diff_std:1g}, p_value = {pval} +/- {pval_std}")
 print()
 
 # ── PLOT 1 — cooling curves + Newton fits ────────────────────────────────────
@@ -275,13 +289,13 @@ styles = {
 
 fig, axes = plt.subplots(2, 2, figsize=(10, 8), sharey=True)
 fig.suptitle("Cooling curves with Newton-law fits", fontsize=13)
-for ax, (t, temp, popt, perr, D, emissivity, label) in zip(axes.flatten(), datasets):
+for ax, (t, temp, t_s, temp_s, popt, perr, emissivity, label) in zip(axes.flatten(), datasets):
     scatter_c, fit_c = styles[label]
-    ax.scatter(t[::100], np.log(temp[::100]), s=1, alpha=0.35, color=scatter_c, label='Data')
+    ax.scatter(t, np.log(temp), s=1, alpha=0.35, color=scatter_c, label='Data')
     x_model = np.linspace(t.min(), t.max(), 500)
     y_model = linear_model(x_model, *popt)
     ax.plot(x_model, y_model, color=fit_c, linewidth=2,
-            label=f'Fit  (k = {popt[0]:.2e} ± {perr[0]:.2e} s⁻¹)')
+            label=f'Fit  (k = {popt[0]:.2e} ± {perr[0]:.1g} s⁻¹)')
     #ax.axhline(np.log(T_AMBIENT), color='gray', ls=':', lw=1)
     ax.set_title(label)
     ax.set_xlabel("Time (s)")
@@ -295,23 +309,27 @@ plt.show()
 
 fig, ax = plt.subplots(1, 2, figsize=(10,5))
 fig.suptitle("Residuals Analysis", fontsize=13)
-for t, temp, popt, perr, D, emissivity, labels in datasets:
-    unique_t, R_n, e_cdf = residuals(t, temp, popt)
-    ax[0].step(R_n, e_cdf, where='post', label=f'ECDF for {labels}', color=styles[labels][1])
-    ax[1].plot(unique_t, R_n, label=f'Residuals {labels}', color=styles[labels][1])
+for t, temp, t_s, temp_s, popt, perr, emissivity, labels in datasets:
+    unique_t, smooth_temp = smooth_average_curve(t_s, temp_s)
+    for i in range(len(t_s)):
+        residuals = calc_residuals(t_s[i], temp_s[i], popt)
+        ax[0].step(residuals['Org_Res'], residuals['ECDF'], where='post', label=f'{labels} Run {i+1}', color=styles[labels][1])
+        ax[1].scatter(temp_s[i], residuals['Residuals'], label=f'Residuals {labels} Run{i}', color=styles[labels][1], s=1)
+    #ax[1].scatter(unique_t, smooth_temp, color=styles[labels][0], s=1)
 
-x_residuals = np.linspace(-2.5, 10, 100)
+x_residuals = np.linspace(-2.5, 5, 100)
 ax[0].plot(x_residuals, norm.cdf(x_residuals, loc = 0, scale = 1), '--', label = 'Gaussian Normal CDF', color = 'red')
 ax[0].set_xlabel("Normalized Residuals for Linearized Data")
 ax[0].set_ylabel("Cumulative Distribution Function Empirical and Theoretical")
-ax[0].set_title(r"CDF vs $R_n$")
+ax[0].set_title(r"Histogram of CDF vs $R_n$")
+ax[0].grid()
+ax[0].legend()
 
-ax[1].set_xlabel("Time (s)")
-ax[1].set_ylabel("Normalized Residuals for Linearized Data")
-ax[1].set_title(r"$R_n$ vs Temperature (ºC)")
+ax[1].set_xlabel("Temperature (ºC)")
+ax[1].set_ylabel("Normalized Residuals")
+ax[1].set_title(r"Scatter Plot $R_n$ vs Temperature (ºC)")
+ax[1].grid()
 
-plt.grid()
-plt.legend()
 plt.show()
 
 
